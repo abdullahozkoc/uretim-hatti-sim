@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import multiprocessing
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import replace
@@ -55,6 +56,18 @@ def senaryo_param(kod: str, temel: HatParam | None = None) -> HatParam:
 
 
 # ---------------------------------------------------------------- replikasyon
+_HAVUZ: ProcessPoolExecutor | None = None
+
+
+def _havuz() -> ProcessPoolExecutor:
+    """Tekrar kullanılan süreç havuzu. "spawn" bağlamı tüm işletim sistemlerinde
+    aynı davranır ve çok iş parçacıklı süreçlerde (ör. Streamlit) fork kilitlenmesini önler."""
+    global _HAVUZ
+    if _HAVUZ is None:
+        _HAVUZ = ProcessPoolExecutor(mp_context=multiprocessing.get_context("spawn"))
+    return _HAVUZ
+
+
 def _tek(args) -> dict:
     p, seed = args
     r = kos(p, seed)
@@ -71,8 +84,7 @@ def replikasyon(p: HatParam, n: int = 30, taban_seed: int = TABAN_SEED,
     """n replikasyon; replikasyon i için tohum = taban + i (ortak rastgele sayılar)."""
     isler = [(p, taban_seed + i) for i in range(n)]
     if paralel:
-        with ProcessPoolExecutor() as h:
-            satirlar = list(h.map(_tek, isler))
+        satirlar = list(_havuz().map(_tek, isler, chunksize=max(1, n // 16)))
     else:
         satirlar = []
         for k, is_ in enumerate(isler):
