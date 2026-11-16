@@ -11,7 +11,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-pytest                           # 28 test, ~45 sn
+pytest                           # 32 test, ~50 sn
 python -m src.mm1_dogrulama      # M/M/1 doğrulama tablosu  -> results/mm1_dogrulama.md
 python -m src.deney              # senaryolar, Welch, tampon eğrisi -> results/deney_raporu.md
 streamlit run app/panel.py       # parametre paneli
@@ -50,6 +50,23 @@ Hedef %2-3 idi; en büyük sapma %0,23. Little yasası farkı en fazla %0,06.
 - Tüm verim farkları istatistiksel olarak anlamlı (aralıklar sıfırı içermiyor).
 
 Tam rapor, kullanım tablosu ve grafikler: [results/deney_raporu.md](results/deney_raporu.md).
+
+### Ekonomik değerlendirme
+
+> **Tutarlar örnek varsayımdır, gerçek şirket verisi değildir.** Varsayımlar: katkı payı 150 TL/ürün, operatör 250 TL/saat, WIP taşıma 2 TL/parça·saat, yılda 4.000 çalışma saati, 3 yıl ufuk, %30 iskonto oranı. Yatırımlar: ikinci iş yeri 150.000 TL, ara stok yeri başına 20.000 TL (20 yer), hat dengeleme 400.000 TL. S4'te bakım programı yılda 300.000 TL.
+
+| Senaryo | Yatırım (TL) | Yıllık net fayda (TL) | Geri ödeme | 3 yıllık NBD (TL) | Başabaş katkı (TL/ürün) |
+|---|---|---|---|---|---|
+| S1 İkinci operatör | 150.000 | 2.211.178 ± 144.120 | 0,8 ay | 3.865.750 ± 261.738 | 50 |
+| S3 Hat dengeleme | 400.000 | 1.570.511 ± 63.024 | 3,1 ay | 2.452.225 ± 114.459 | 20 |
+| S4 Önleyici bakım | – (yıllık 300.000) | 288.312 ± 115.022 | – | 523.607 ± 208.892 | 77 |
+| S2 Tampon büyütme | 400.000 | 264.101 ± 34.625 | 18,2 ay | 79.637 ± 62.883 | 131 |
+
+- Varsayılan değerlerde **S1 en kârlı seçenek**; ikinci operatör maliyetini bir ayın altında geri kazandırıyor.
+- **Karar, katkı payına bağlı:** Ürün başına katkı 79 TL'nin altına düşerse S3 (hat dengeleme) öne geçiyor, çünkü S3'ün sürekli bir işletme maliyeti yok. 21 TL'nin altında hiçbir senaryo kendini 3 yılda ödemiyor.
+- **S2 neredeyse başabaşta:** Verim kazancı küçük, WIP taşıma maliyeti ise büyük. NBD replikasyonların %30'unda negatif çıkıyor.
+
+![Maliyet duyarlılığı](results/maliyet_duyarlilik.png)
 
 ### Isınma süresi (Welch)
 
@@ -96,13 +113,14 @@ Tamamlananlar:
 - [x] **Kalibrasyon araçları:** `src/kalibrasyon.py` dosyası dağılım uydurma ve KS testi yapıyor, arıza kayıtlarından MTBF ve MTTR hesaplıyor, ölçülen sürelerden `IstasyonParam` üretiyor. Staj verisi geldiğinde doğrudan kullanılabilir.
 - [x] **Otomatik test (CI):** `.github/workflows/test.yml` dosyası her push'ta testleri Python 3.11-3.13 ile koşuyor.
 
+- [x] **Ekonomik değerlendirme:** `src/maliyet.py` yıllık net faydayı, geri ödeme süresini, NBD'yi ve başabaş katkı payını güven aralığıyla hesaplıyor; panelde maliyet varsayımları değiştirilebiliyor. Ayrıntılar aşağıda.
+
 Öneriler (henüz yapılmadı, kapsamı değiştirdiği için onay bekliyor):
 
 1. **Gerçek veriyle validation:** Staj hattından 100-200 süre ölçümü ve duruş kayıtları alınıp model verimi gerçek verimle karşılaştırılır (hedef: %5-10 fark).
-2. **Ekonomik değerlendirme:** Senaryolara yatırım ve işletme maliyeti eklenir (ör. ikinci operatörün saatlik maliyeti ve ara stok alanı). Böylece karşılaştırmaya "verim artışı başına maliyet" ve geri ödeme süresi eklenir.
-3. **Tampon dağıtımı optimizasyonu:** Toplam tampon sayısı sabitken en iyi dağılım aranır (simülasyon tabanlı optimizasyon). İlk sürümde kapsam dışıydı.
-4. **Ürün çeşitliliği ve hazırlık süreleri:** Halı dokuma planlama projesiyle bağlantı kurulur.
-5. **OEE projesiyle entegrasyon:** Modelden OEE (kullanılabilirlik × performans × kalite) hesaplanır ve gerçek OEE verisiyle karşılaştırılır.
+2. **Tampon dağıtımı optimizasyonu:** Toplam tampon sayısı sabitken en iyi dağılım aranır (simülasyon tabanlı optimizasyon). İlk sürümde kapsam dışıydı.
+3. **Ürün çeşitliliği ve hazırlık süreleri:** Halı dokuma planlama projesiyle bağlantı kurulur.
+4. **OEE projesiyle entegrasyon:** Modelden OEE (kullanılabilirlik × performans × kalite) hesaplanır ve gerçek OEE verisiyle karşılaştırılır.
 
 ## Klasör yapısı
 
@@ -115,6 +133,7 @@ src/
   deney.py          # replikasyon, senaryolar, Welch, duyarlılık
   analiz.py         # güven aralığı, eşleştirilmiş fark, hareketli ortalama
   kalibrasyon.py    # dağılım uydurma, MTBF/MTTR
+  maliyet.py        # yatırım, NBD, geri ödeme, başabaş
 app/panel.py        # Streamlit arayüzü
 tests/              # test_mm1, test_hat, test_deney, test_panel
 results/            # üretilen tablolar ve grafikler
@@ -123,4 +142,4 @@ data/               # gerçek veri (git'e eklenmez)
 
 ## Proje özeti (CV ve mülakat için)
 
-> Python/SimPy ile 5 istasyonlu, arızalı ve sınırlı ara stoklu bir seri üretim hattının ayrık olay simülasyonunu kurdum. Modeli önce M/M/1 kuyruk teorisiyle doğruladım (sapma %0,3'ün altında), ardından Welch yöntemiyle ısınma süresini belirledim. Dört iyileştirme senaryosunu ortak rastgele sayılar ve eşleştirilmiş t güven aralıklarıyla karşılaştırdım. Darboğaza ikinci operatör eklemek verimi %29 artırdı ve darboğazı bir önceki istasyona taşıdı. Tamponu büyütmek ise verimi yalnızca %3 artırırken çevrim süresini %64 uzattı. Sonuçlar, parametreleri 2 saniyede güncelleyen bir Streamlit panelinde sunuluyor; projede 28 otomatik test var.
+> Python/SimPy ile 5 istasyonlu, arızalı ve sınırlı ara stoklu bir seri üretim hattının ayrık olay simülasyonunu kurdum. Modeli önce M/M/1 kuyruk teorisiyle doğruladım (sapma %0,3'ün altında), ardından Welch yöntemiyle ısınma süresini belirledim. Dört iyileştirme senaryosunu ortak rastgele sayılar ve eşleştirilmiş t güven aralıklarıyla karşılaştırdım. Darboğaza ikinci operatör eklemek verimi %29 artırdı ve darboğazı bir önceki istasyona taşıdı. Tamponu büyütmek ise verimi yalnızca %3 artırırken çevrim süresini %64 uzattı. Senaryoları NBD, geri ödeme süresi ve başabaş katkı payıyla ekonomik olarak da karşılaştırdım; en iyi seçeneğin ürün katkı payına göre değiştiğini gösterdim. Sonuçlar, parametreleri 2 saniyede güncelleyen bir Streamlit panelinde sunuluyor; projede 32 otomatik test var.

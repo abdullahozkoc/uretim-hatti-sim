@@ -22,3 +22,4 @@ def test_panel_acilir_ve_hizli_gunceller():
     at.button[0].click().run()
     assert not at.exception
     assert list(at.dataframe[1].value["Senaryo"]) == ["S0", "S1", "S2", "S3"]
+    assert list(at.dataframe[2].value["Senaryo"]) == ["S1", "S3", "S2"]

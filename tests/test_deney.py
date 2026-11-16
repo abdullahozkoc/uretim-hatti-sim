@@ -69,3 +69,50 @@ def test_mtbf_mttr():
     mtbf, mttr = mtbf_mttr([100, 300, 500], [110, 320, 530])
     assert mttr == pytest.approx(20)
     assert mtbf == pytest.approx((190 + 180) / 2)
+
+
+# ---------------------------------------------------------------- maliyet
+from dataclasses import replace  # noqa: E402
+
+import pandas as pd  # noqa: E402
+
+from src.maliyet import MaliyetParam, SenaryoMaliyeti, degerlendir, secim_gecisleri  # noqa: E402
+
+
+def _sahte(dv, dw=0.0, n=5):
+    s0 = pd.DataFrame({"verim": [10.0] * n, "wip": [5.0] * n})
+    s1 = pd.DataFrame({"verim": [10.0 + dv] * n, "wip": [5.0 + dw] * n})
+    return {"S0": s0, "S1": s1}
+
+
+def test_maliyet_el_hesabi():
+    m = MaliyetParam(birim_katki=100, wip_tasima=0, yillik_saat=1_000, ufuk=1, iskonto=0.0)
+    sm = {"S1": SenaryoMaliyeti(yatirim=500_000, saatlik=50)}
+    d = degerlendir(_sahte(2.0), m, sm).iloc[0]
+    # (2·100 − 50)·1000 = 150.000 TL/yıl
+    assert d["Yıllık net fayda (TL)"] == pytest.approx(150_000)
+    assert d["Geri ödeme (ay)"] == pytest.approx(40.0)
+    assert d["NBD 1 yıl (TL)"] == pytest.approx(-350_000)
+    # Başabaş: (500.000 + 50·1000) / (2·1000) = 275 TL/ürün
+    assert d["Başabaş katkı payı (TL/ürün)"] == pytest.approx(275)
+
+
+def test_basabasta_nbd_sifir():
+    m = MaliyetParam(wip_tasima=3, ufuk=3, iskonto=0.2)
+    sm = {"S1": SenaryoMaliyeti(yatirim=200_000, saatlik=40, yillik=10_000)}
+    s = _sahte(1.5, dw=2.0)
+    k = degerlendir(s, m, sm).iloc[0]["Başabaş katkı payı (TL/ürün)"]
+    assert degerlendir(s, replace(m, birim_katki=k), sm).iloc[0]["NBD 3 yıl (TL)"] == pytest.approx(0, abs=1e-6)
+
+
+def test_verim_dususu_basabas_sonsuz_ve_gecis():
+    d = degerlendir(_sahte(-1.0), MaliyetParam(), {"S1": SenaryoMaliyeti(yatirim=1)}).iloc[0]
+    assert d["Başabaş katkı payı (TL/ürün)"] == float("inf")
+    assert secim_gecisleri(_sahte(-1.0), MaliyetParam(), alt=10, ust=20) == [(10.0, "Hiçbiri")]
+
+
+def test_gercek_senaryolarla_maliyet():
+    s = {k: replikasyon(senaryo_param(k), 5) for k in ("S0", "S1", "S2")}
+    d = degerlendir(s)
+    assert set(d["Senaryo"]) == {"S1", "S2"}
+    assert d.iloc[0]["Senaryo"] == "S1"     # varsayılan değerlerde en yüksek NBD

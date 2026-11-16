@@ -274,6 +274,27 @@ def main(n: int = 30) -> None:
     # 4) Gereken replikasyon sayısı (yeni hedef)
     gr = gerekli_replikasyon(temel, "verim", 0.01)
 
+    # 5) Ekonomik değerlendirme (yeni hedef)
+    from src.maliyet import MaliyetParam, degerlendir, duyarlilik, secim_gecisleri, tablo_bicimle
+    mp = MaliyetParam()
+    ekonomi = degerlendir(sonuclar, mp)
+    ekonomi.to_csv(SONUC_DIZINI / "maliyet_degerlendirme.csv", index=False)
+    ekon_dyr = duyarlilik(sonuclar, maliyet=mp)
+    gecisler = secim_gecisleri(sonuclar, mp)
+    fig, a = plt.subplots(figsize=(6.5, 3.8))
+    ince = duyarlilik(sonuclar, np.arange(10, 310, 10), mp)
+    for kod in [k for k in sonuclar if k != "S0"]:
+        a.plot(ince["Birim katkı (TL)"], ince[kod] / 1e6, label=f"{kod}: {SENARYOLAR[kod][0]}")
+    a.axhline(0, color="#555", lw=0.8)
+    a.axvline(mp.birim_katki, color="#555", ls=":", lw=1)
+    a.set_xlabel("ürün başına katkı payı (TL)")
+    a.set_ylabel(f"{mp.ufuk} yıllık NBD (milyon TL)")
+    a.set_title("Katkı payına göre senaryo NBD'si")
+    a.legend(fontsize=7)
+    fig.tight_layout()
+    fig.savefig(SONUC_DIZINI / "maliyet_duyarlilik.png", dpi=130)
+    plt.close(fig)
+
     # Markdown rapor
     md = ["# Deney sonuçları", "",
           f"Koşu: {temel.sure:.0f} dk ölçüm + {temel.isinma:.0f} dk ısınma, her senaryo {n} replikasyon, "
@@ -293,7 +314,22 @@ def main(n: int = 30) -> None:
           "![Tampon duyarlılığı](tampon_duyarlilik.png)", "",
           "## Gereken replikasyon sayısı", "",
           f"S0 verimi için %1 bağıl yarı genişlik hedefi: **{gr['n']} replikasyon** "
-          f"(verim {gr['ortalama']:.2f} ± {gr['yg']:.2f}, bağıl %{100 * gr['bagil_yg']:.2f}).", ""]
+          f"(verim {gr['ortalama']:.2f} ± {gr['yg']:.2f}, bağıl %{100 * gr['bagil_yg']:.2f}).", "",
+          "## Ekonomik değerlendirme", "",
+          "> **Tutarlar örnek varsayımdır, gerçek şirket verisi değildir.** "
+          f"Katkı payı {mp.birim_katki:.0f} TL/ürün, operatör {mp.operator_saatlik:.0f} TL/saat, "
+          f"WIP taşıma {mp.wip_tasima:.0f} TL/parça·saat, yılda {mp.yillik_saat:.0f} çalışma saati, "
+          f"{mp.ufuk} yıl ufuk, %{100 * mp.iskonto:.0f} iskonto. Ara stok yeri "
+          f"{mp.tampon_slot_yatirim:,.0f} TL, hat dengeleme {mp.dengeleme_yatirim:,.0f} TL, "
+          f"bakım programı {mp.bakim_yillik:,.0f} TL/yıl, ikinci iş yeri {mp.operator_yatirim:,.0f} TL.", "",
+          tablo_bicimle(ekonomi).to_markdown(index=False, disable_numparse=True), "",
+          "Başabaş katkı: yatırımın ufuk içinde geri dönmesi (NBD = 0) için ürün başına gereken en düşük katkı payı.", "",
+          "### Katkı payına duyarlılık", "",
+          (ekon_dyr.set_index(["Birim katkı (TL)", "En iyi"]) / 1e3).round(0).reset_index()
+          .to_markdown(index=False) + "\n\n(NBD değerleri bin TL)", "",
+          "En iyi senaryonun değiştiği katkı payları: "
+          + ", ".join(f"{k:.0f} TL'den itibaren {s}" for k, s in gecisler) + ".", "",
+          "![Maliyet duyarlılığı](maliyet_duyarlilik.png)", ""]
     (SONUC_DIZINI / "deney_raporu.md").write_text("\n".join(md))
     print("\n".join(md))
 

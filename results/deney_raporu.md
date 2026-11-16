@@ -48,3 +48,34 @@ Koşu: 5000 dk ölçüm + 500 dk ısınma, her senaryo 30 replikasyon, tohumlar 
 ## Gereken replikasyon sayısı
 
 S0 verimi için %1 bağıl yarı genişlik hedefi: **55 replikasyon** (verim 18.63 ± 0.18, bağıl %0.98).
+
+## Ekonomik değerlendirme
+
+> **Tutarlar örnek varsayımdır, gerçek şirket verisi değildir.** Katkı payı 150 TL/ürün, operatör 250 TL/saat, WIP taşıma 2 TL/parça·saat, yılda 4000 çalışma saati, 3 yıl ufuk, %30 iskonto. Ara stok yeri 20,000 TL, hat dengeleme 400,000 TL, bakım programı 300,000 TL/yıl, ikinci iş yeri 150,000 TL.
+
+| Senaryo   | Maliyet kalemi                                   | Yatırım (TL)   | Yıllık net fayda (TL)   | Geri ödeme (ay)   | NBD 3 yıl (TL)      | NBD > 0 olan replikasyon   | Başabaş katkı (TL/ürün)   |
+|:----------|:-------------------------------------------------|:---------------|:------------------------|:------------------|:--------------------|:---------------------------|:--------------------------|
+| S1        | İkinci operatör: ekipman + eğitim, saatlik ücret | 150.000        | 2.211.178 ± 144.120     | 0.8               | 3.865.750 ± 261.738 | %100                       | 50                        |
+| S3        | Hat dengeleme projesi                            | 400.000        | 1.570.511 ± 63.024      | 3.1               | 2.452.225 ± 114.459 | %100                       | 20                        |
+| S4        | Önleyici bakım programı                          | 0              | 288.312 ± 115.022       | yatırım yok       | 523.607 ± 208.892   | %80                        | 77                        |
+| S2        | 20 ek ara stok yeri                              | 400.000        | 264.101 ± 34.625        | 18.2              | 79.637 ± 62.883     | %70                        | 131                       |
+
+Başabaş katkı: yatırımın ufuk içinde geri dönmesi (NBD = 0) için ürün başına gereken en düşük katkı payı.
+
+### Katkı payına duyarlılık
+
+|   Birim katkı (TL) | En iyi   |   S3 |   S4 |   S2 |   S1 |
+|-------------------:|:---------|-----:|-----:|-----:|-----:|
+|                 25 | S3       |   89 | -367 | -433 | -979 |
+|                 50 | S3       |  562 | -189 | -330 |  -10 |
+|                 75 | S3       | 1034 |  -11 | -228 |  959 |
+|                100 | S1       | 1507 |  167 | -125 | 1928 |
+|                150 | S1       | 2452 |  524 |   80 | 3866 |
+|                200 | S1       | 3397 |  880 |  284 | 5804 |
+|                300 | S1       | 5288 | 1592 |  694 | 9680 |
+
+(NBD değerleri bin TL)
+
+En iyi senaryonun değiştiği katkı payları: 5 TL'den itibaren Hiçbiri, 21 TL'den itibaren S3, 79 TL'den itibaren S1.
+
+![Maliyet duyarlılığı](maliyet_duyarlilik.png)

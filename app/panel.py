@@ -18,6 +18,7 @@ import streamlit as st  # noqa: E402
 from src.analiz import eslestirilmis_fark, guven_araligi  # noqa: E402
 from src.deney import SENARYOLAR, karsilastir, ozetle, replikasyon, senaryo_param  # noqa: E402
 from src.hat import HatParam, kos  # noqa: E402
+from src.maliyet import MaliyetParam, degerlendir, duyarlilik, secim_gecisleri, tablo_bicimle  # noqa: E402
 
 st.set_page_config(page_title="Üretim Hattı Simülasyonu", layout="wide")
 
@@ -155,13 +156,47 @@ if sonuclar:
                "köşeli parantez %95 güven aralığı. Aralık sıfırı içeriyorsa fark anlamsızdır.")
     vg = pd.DataFrame([{"Senaryo": k, "Verim": guven_araligi(v["verim"])[0],
                         "YG": guven_araligi(v["verim"])[1]} for k, v in sonuclar.items()])
-    taban_g = alt.Chart(vg).encode(x=alt.X("Senaryo:N", sort=None))
+    taban_g = alt.Chart(vg).encode(x=alt.X("Senaryo:N", sort=None, axis=alt.Axis(labelAngle=0)))
     st.altair_chart(taban_g.mark_bar(color="#1f6feb").encode(y=alt.Y("Verim:Q", title="verim (ürün/saat)"))
-                    + taban_g.mark_errorbar().encode(y="ymin:Q", y2="ymax:Q").transform_calculate(
+                    + taban_g.mark_errorbar().encode(y=alt.Y("ymin:Q", title="verim (ürün/saat)"), y2="ymax:Q").transform_calculate(
                         ymin="datum.Verim - datum.YG", ymax="datum.Verim + datum.YG"),
                     width="stretch")
 
-    # 5) Dışa aktarma
+    # 5) Ekonomik değerlendirme
+    if "S0" in sonuclar and len(sonuclar) > 1:
+        st.subheader("Ekonomik değerlendirme")
+        st.warning("Varsayılan tutarlar örnek değerlerdir; gerçek maliyetleri aşağıdan girin.", icon="⚠️")
+        v = MaliyetParam()
+        with st.expander("Maliyet varsayımları", expanded=False):
+            m1, m2, m3 = st.columns(3)
+            v = MaliyetParam(
+                birim_katki=m1.number_input("Ürün başına katkı payı (TL)", 0.0, 10_000.0, v.birim_katki, 10.0),
+                operator_saatlik=m1.number_input("Operatör maliyeti (TL/saat)", 0.0, 5_000.0, v.operator_saatlik, 10.0),
+                operator_yatirim=m1.number_input("S1 iş yeri + eğitim yatırımı (TL)", 0.0, 1e8, v.operator_yatirim, 10_000.0),
+                wip_tasima=m2.number_input("WIP taşıma (TL/parça·saat)", 0.0, 1_000.0, v.wip_tasima, 0.5),
+                tampon_slot_yatirim=m2.number_input("Ara stok yeri yatırımı (TL/yer)", 0.0, 1e7, v.tampon_slot_yatirim, 1_000.0),
+                dengeleme_yatirim=m2.number_input("S3 hat dengeleme yatırımı (TL)", 0.0, 1e8, v.dengeleme_yatirim, 10_000.0),
+                bakim_yillik=m3.number_input("S4 bakım programı (TL/yıl)", 0.0, 1e8, v.bakim_yillik, 10_000.0),
+                yillik_saat=m3.number_input("Yıllık çalışma saati", 100.0, 8_760.0, v.yillik_saat, 100.0),
+                ufuk=int(m3.number_input("Ufuk (yıl)", 1, 15, v.ufuk)),
+                iskonto=m3.number_input("İskonto oranı (%)", 0.0, 100.0, 100 * v.iskonto, 1.0) / 100,
+            )
+        hazir_sonuc = {k: d for k, d in sonuclar.items() if k in SENARYOLAR}
+        ekonomi = degerlendir(hazir_sonuc, v)
+        st.dataframe(tablo_bicimle(ekonomi), hide_index=True, width="stretch")
+        gecis = secim_gecisleri(hazir_sonuc, v)
+        st.caption("Başabaş katkı: yatırımın ufuk içinde geri dönmesi için ürün başına gereken en düşük katkı payı. "
+                   "En iyi senaryonun değiştiği katkı payları: "
+                   + ", ".join(f"{k:.0f} TL'den itibaren {s_}" for k, s_ in gecis) + ".")
+        dy = duyarlilik(hazir_sonuc, list(range(10, 310, 10)), v)
+        uzun_m = dy.drop(columns="En iyi").melt(id_vars="Birim katkı (TL)", var_name="Senaryo", value_name="NBD")
+        st.altair_chart(alt.Chart(uzun_m).mark_line().encode(
+            x="Birim katkı (TL):Q", y=alt.Y("NBD:Q", title=f"{v.ufuk} yıllık NBD (TL)"), color="Senaryo:N"),
+            width="stretch")
+        st.download_button("Ekonomik değerlendirmeyi CSV indir", ekonomi.to_csv(index=False).encode("utf-8-sig"),
+                           "maliyet_degerlendirme.csv", "text/csv")
+
+    # 6) Dışa aktarma
     hepsi = pd.concat([v.assign(senaryo=k) for k, v in sonuclar.items()], ignore_index=True)
     st.download_button("Replikasyon sonuçlarını CSV indir", hepsi.to_csv(index=False).encode("utf-8-sig"),
                        "senaryo_sonuclari.csv", "text/csv")
