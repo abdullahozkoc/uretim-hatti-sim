@@ -8,3 +8,4 @@ data/*
 data/hali/*
 !data/hali/is_etudu/
 !data/hali/parametreler.json
+!data/hali/ornek_saha/

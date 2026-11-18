@@ -22,30 +22,32 @@ def _olcekle(p: HaliParam, alanlar, k) -> HaliParam:
 
 
 SENARYOLAR: dict[str, tuple[str, Callable[[HaliParam], HaliParam]]] = {
-    "H0": ("Temel: 4 tezgâh/operatör, toplu mola", lambda p: p),
-    "H1": ("3 tezgâh/operatör (daha çok operatör)", lambda p: replace(p, operator_basina_tezgah=3)),
-    "H2": ("6 tezgâh/operatör (daha az operatör)", lambda p: replace(p, operator_basina_tezgah=6)),
-    "H3": ("Kademeli mola, komşu operatör bakar", lambda p: replace(p, mola_duzeni="kademeli")),
-    "H4": ("Yedek operatörle sırayla mola", lambda p: replace(p, mola_duzeni="yedek")),
-    "H5": ("İplik kalitesi: kopuşlar %30 az",
+    "H0": ("Temel: tezgâh başına 1 operatör + 1 telci, toplu mola", lambda p: p),
+    "H1": ("Kademeli mola: komşu aynı rol bakar", lambda p: replace(p, mola_duzeni="kademeli")),
+    "H2": ("Çapraz mola: operatör ve telci birbirine bakar", lambda p: replace(p, mola_duzeni="capraz")),
+    "H3": ("Yedek personelle dalgalı mola (+2 kişi)", lambda p: replace(p, mola_duzeni="yedek")),
+    "H4": ("1 telci / 2 tezgâh", lambda p: replace(p, telci_basina_tezgah=2)),
+    "H5": ("1 operatör / 2 tezgâh", lambda p: replace(p, operator_basina_tezgah=2)),
+    "H6": ("1 telci / 2 tezgâh + çapraz mola",
+           lambda p: replace(p, telci_basina_tezgah=2, mola_duzeni="capraz")),
+    "H7": ("Renk ekibi 2'ye çıkar", lambda p: replace(p, renk_ekibi=p.renk_ekibi + 1)),
+    "H8": ("SMED: renk değişimi %40 kısa", lambda p: _olcekle(p, ("renk_degisim",), 0.6)),
+    "H9": ("İplik kalitesi: kopuşlar %30 az",
            lambda p: replace(p, atki_kopus_saat=p.atki_kopus_saat * 0.7, cozgu_kopus_saat=p.cozgu_kopus_saat * 0.7)),
-    "H6": ("SMED: ayar ve çözgü değişimi %40 kısa", lambda p: _olcekle(p, ("ayar", "cozgu_degisim"), 0.6)),
-    "H7": ("Önleyici bakım: arıza aralığı ×1,5", lambda p: replace(p, ariza_mtbf_saat=p.ariza_mtbf_saat * 1.5)),
-    "H8": ("Öncelik kuralı: duran tezgâh önce", lambda p: replace(p, secim_kurali="oncelikli")),
-    "H9": ("Yerleşim: yürüme süresi %50 kısa",
-           lambda p: replace(p, yurume_tezgah_arasi=p.yurume_tezgah_arasi / 2, yurume_sabit=p.yurume_sabit / 2)),
-    "H10": ("Tezgâh hızı +%10 (kopuş +%20)",
-            lambda p: replace(p, devir=p.devir * 1.1, atki_kopus_saat=p.atki_kopus_saat * 1.2,
-                              cozgu_kopus_saat=p.cozgu_kopus_saat * 1.2)),
+    "H10": ("Önleyici bakım: arıza aralığı ×1,5", lambda p: replace(p, ariza_mtbf_saat=p.ariza_mtbf_saat * 1.5)),
+    "H11": ("Devir +%10 (kopuş +%20)",
+            lambda p: replace(p, tezgahlar=tuple(replace(t, devir=t.devir.olcekle(1.1)) for t in p.tezgahlar),
+                              atki_kopus_saat=p.atki_kopus_saat * 1.2, cozgu_kopus_saat=p.cozgu_kopus_saat * 1.2)),
 }
 
 METRIKLER = {
-    "m2_gun": ("Üretim (m²/gün)", 0),
-    "tezgah_verimi": ("Tezgâh dokuma oranı", 3),
-    "girisim": ("Operatör bekleme oranı", 3),
+    "m2_vardiya": ("Salon m²/vardiya", 0),
+    "m2_vardiya_tezgah": ("Tezgâh başına m²/vardiya", 1),
+    "tezgah_verimi": ("Dokuma oranı", 3),
+    "girisim": ("Personel bekleme oranı", 3),
     "operator_doluluk": ("Operatör doluluğu", 3),
-    "m2_operator_saat": ("m² / operatör-saat", 1),
-    "ort_bekleme_dk": ("Ort. müdahale bekleme (dk)", 2),
+    "telci_doluluk": ("Telci doluluğu", 3),
+    "m2_personel_saat": ("m² / personel-saat", 1),
 }
 
 
@@ -83,15 +85,15 @@ def karsilastir(sonuclar: dict[str, pd.DataFrame], referans: str = "H0") -> pd.D
     satirlar = []
     for kod, df in sonuclar.items():
         s = {"Senaryo": kod, "Açıklama": SENARYOLAR.get(kod, (kod,))[0],
-             "Operatör": int(df["operator_sayisi"].iloc[0])}
+             "Personel": int(df["personel_sayisi"].iloc[0])}
         for m, (etiket, b) in METRIKLER.items():
             s[etiket] = bicimle(*guven_araligi(df[m]), b)
         if kod != referans:
-            f = eslestirilmis_fark(ref["m2_gun"], df["m2_gun"])
-            s["Δ m²/gün"] = f"{f['fark']:+.0f} [{f['alt']:+.0f}, {f['ust']:+.0f}]" + ("" if f["anlamli"] else " (anlamsız)")
-            s["Δ %"] = f"{100 * f['fark'] / ref['m2_gun'].mean():+.1f}"
+            f = eslestirilmis_fark(ref["m2_vardiya"], df["m2_vardiya"])
+            s["Δ m²/vardiya"] = f"{f['fark']:+.0f} [{f['alt']:+.0f}, {f['ust']:+.0f}]" + ("" if f["anlamli"] else " (anlamsız)")
+            s["Δ %"] = f"{100 * f['fark'] / ref['m2_vardiya'].mean():+.1f}"
         else:
-            s["Δ m²/gün"], s["Δ %"] = "-", "-"
+            s["Δ m²/vardiya"], s["Δ %"] = "-", "-"
         satirlar.append(s)
     return pd.DataFrame(satirlar)
 
@@ -102,23 +104,24 @@ def durum_ozeti(sonuclar: dict[str, pd.DataFrame], onek: str) -> pd.DataFrame:
                          for k, df in sonuclar.items()}).T
 
 
-def atama_egrisi(tezgah_sayilari=(2, 3, 4, 5, 6, 8), n: int = 10, temel: HaliParam | None = None,
-                 katki_tl_m2: float = 60.0, operator_tl_saat: float = 250.0,
+def atama_egrisi(rol: str = "telci", tezgah_sayilari=(1, 2, 3, 4), n: int = 10, temel: HaliParam | None = None,
+                 katki_tl_m2: float = 60.0, personel_tl_saat: float = 250.0,
                  paralel: bool = True, taban_seed: int = TABAN_SEED) -> pd.DataFrame:
-    """Operatör başına tezgâh sayısına göre üretim, girişim ve günlük net katkı.
+    """Kişi başına tezgâh sayısına göre üretim, girişim ve vardiya başına net katkı.
 
-    katki_tl_m2 ve operator_tl_saat VARSAYIM'dır (fabrika verisiyle değiştirin).
-    Net katkı = m²/gün × katkı payı − operatör sayısı × 24 saat × saat maliyeti.
+    rol: "operator" ya da "telci". katki_tl_m2 ve personel_tl_saat VARSAYIM'dır.
+    Net katkı/vardiya = m²/vardiya × katkı payı − personel sayısı × vardiya saati × saat maliyeti.
     """
     temel = temel or HaliParam()
+    alan = "operator_basina_tezgah" if rol == "operator" else "telci_basina_tezgah"
     satirlar = []
     for m in tezgah_sayilari:
-        p = replace(temel, operator_basina_tezgah=m)
+        p = replace(temel, **{alan: m})
         df = replikasyon(p, n, taban_seed, paralel)
-        net = df["m2_gun"] * katki_tl_m2 - df["operator_sayisi"] * 24 * operator_tl_saat
-        s = {"tezgah_operator": m, "operator_sayisi": p.operator_sayisi}
-        for c in ("m2_gun", "tezgah_verimi", "girisim", "operator_doluluk", "m2_operator_saat"):
+        net = df["m2_vardiya"] * katki_tl_m2 - df["personel_sayisi"] * p.vardiya_dk / 60 * personel_tl_saat
+        s = {"tezgah_kisi": m, "kisi_sayisi": p.kisi_sayisi(rol), "personel_sayisi": p.personel_sayisi}
+        for c in ("m2_vardiya", "tezgah_verimi", "girisim", f"{rol}_doluluk", "m2_personel_saat"):
             s[c], s[c + "_yg"] = guven_araligi(df[c])
-        s["net_katki_gun"], s["net_katki_gun_yg"] = guven_araligi(net)
+        s["net_katki_vardiya"], s["net_katki_vardiya_yg"] = guven_araligi(net)
         satirlar.append(s)
     return pd.DataFrame(satirlar)

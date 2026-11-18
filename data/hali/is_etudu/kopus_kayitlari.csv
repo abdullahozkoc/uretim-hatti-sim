@@ -1,3 +1,3 @@
-tarih,tezgah,urun,tur,durus_dk,mudahale_bas_dk,bitis_dk,operator,not
-2026-12-01,T03,A,atki,12.0,13.5,14.4,O1,ORNEK SATIR - silin
-2026-12-01,T02,B,cozgu,30.2,31.0,33.6,O1,ORNEK SATIR - silin
+tarih,tezgah,urun,tur,durus_dk,mudahale_bas_dk,bitis_dk,personel,not
+2026-12-01,T03,ORNEK-URUN,atki,12.0,13.5,14.4,O03,ORNEK SATIR - silin
+2026-12-01,T02,ORNEK-URUN,cozgu,30.2,31.0,33.6,TL02,ORNEK SATIR - silin

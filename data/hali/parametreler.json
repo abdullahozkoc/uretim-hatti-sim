@@ -1,60 +1,350 @@
 {
-  "tezgah_sayisi": 12,
-  "operator_basina_tezgah": 4,
-  "devir": 100.0,
-  "yuz_sayisi": 2,
-  "urunler": [
+  "tezgahlar": [
     {
-      "ad": "A (seyrek, 1.000 sık)",
-      "oran": 0.5,
-      "atki_sikligi": 2000,
-      "en_m": 4.0,
-      "kopus_carpani": 0.8,
-      "top_uzunlugu": {
+      "ad": "T01",
+      "marka": "Schönherr",
+      "tarak": 42,
+      "en_m": 5.0,
+      "renk": 8,
+      "tarak_sayisi": 2100,
+      "sira_10cm": 63,
+      "devir": {
         "tip": "ucgen",
-        "a": 20,
-        "b": 30,
-        "c": 40,
+        "a": 70,
+        "b": 85,
+        "c": 100,
         "veri": [],
         "kaynak": "VARSAYIM"
       },
-      "kaynak": "VARSAYIM"
+      "kopus_carpani": 1.05,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
     },
     {
-      "ad": "B (orta, 1.250 sık)",
-      "oran": 0.3,
-      "atki_sikligi": 2500,
+      "ad": "T02",
+      "marka": "Van De Wiele",
+      "tarak": 42,
       "en_m": 4.0,
+      "renk": 7,
+      "tarak_sayisi": 1680,
+      "sira_10cm": 63,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
       "kopus_carpani": 1.0,
-      "top_uzunlugu": {
-        "tip": "ucgen",
-        "a": 20,
-        "b": 30,
-        "c": 40,
-        "veri": [],
-        "kaynak": "VARSAYIM"
-      },
-      "kaynak": "VARSAYIM"
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
     },
     {
-      "ad": "C (sık, 1.500 sık)",
-      "oran": 0.2,
-      "atki_sikligi": 3000,
+      "ad": "T03",
+      "marka": "Van De Wiele",
+      "tarak": 42,
       "en_m": 4.0,
-      "kopus_carpani": 1.4,
-      "top_uzunlugu": {
+      "renk": 7,
+      "tarak_sayisi": 1716,
+      "sira_10cm": 63,
+      "devir": {
         "tip": "ucgen",
-        "a": 20,
-        "b": 30,
-        "c": 40,
+        "a": 70,
+        "b": 85,
+        "c": 100,
         "veri": [],
         "kaynak": "VARSAYIM"
       },
-      "kaynak": "VARSAYIM"
+      "kopus_carpani": 1.0,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T04",
+      "marka": "Van De Wiele",
+      "tarak": 42,
+      "en_m": 4.0,
+      "renk": 7,
+      "tarak_sayisi": 1716,
+      "sira_10cm": 63,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 1.0,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T05",
+      "marka": "Van De Wiele",
+      "tarak": 42,
+      "en_m": 4.0,
+      "renk": 7,
+      "tarak_sayisi": 1680,
+      "sira_10cm": 63,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 1.0,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T06",
+      "marka": "Schönherr",
+      "tarak": 50,
+      "en_m": 4.0,
+      "renk": 6,
+      "tarak_sayisi": 2000,
+      "sira_10cm": 75,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 0.982,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T07",
+      "marka": "Schönherr",
+      "tarak": 50,
+      "en_m": 4.0,
+      "renk": 8,
+      "tarak_sayisi": 2000,
+      "sira_10cm": 75,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 1.082,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T08",
+      "marka": "Schönherr",
+      "tarak": 50,
+      "en_m": 4.0,
+      "renk": 8,
+      "tarak_sayisi": 2000,
+      "sira_10cm": 75,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 1.082,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T09",
+      "marka": "Van De Wiele-Schönherr",
+      "tarak": 50,
+      "en_m": 4.0,
+      "renk": 8,
+      "tarak_sayisi": 2000,
+      "sira_10cm": 75,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 1.082,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T10",
+      "marka": "Van De Wiele",
+      "tarak": 50,
+      "en_m": 4.0,
+      "renk": 8,
+      "tarak_sayisi": 2020,
+      "sira_10cm": 75,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 1.082,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T11",
+      "marka": "Schönherr",
+      "tarak": 70,
+      "en_m": 4.0,
+      "renk": 8,
+      "tarak_sayisi": 2800,
+      "sira_10cm": 105,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 1.162,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T12",
+      "marka": "Van De Wiele",
+      "tarak": 50,
+      "en_m": 4.0,
+      "renk": 8,
+      "tarak_sayisi": 2000,
+      "sira_10cm": 75,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 1.082,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T13",
+      "marka": "Van De Wiele",
+      "tarak": 42,
+      "en_m": 4.0,
+      "renk": 7,
+      "tarak_sayisi": 1680,
+      "sira_10cm": 63,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 1.0,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "T14",
+      "marka": "Van De Wiele",
+      "tarak": 42,
+      "en_m": 4.0,
+      "renk": 7,
+      "tarak_sayisi": 1680,
+      "sira_10cm": 63,
+      "devir": {
+        "tip": "ucgen",
+        "a": 70,
+        "b": 85,
+        "c": 100,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kopus_carpani": 1.0,
+      "kaynak": "FABRİKA",
+      "sira_kaynak": "VARSAYIM"
     }
   ],
+  "yuz_sayisi": 2,
+  "atki_sistemi": 2,
+  "operator_basina_tezgah": 1,
+  "telci_basina_tezgah": 1,
+  "is_rolleri": [
+    [
+      "atki_kopusu",
+      "operator"
+    ],
+    [
+      "top_indirme",
+      "operator"
+    ],
+    [
+      "ayar",
+      "operator"
+    ],
+    [
+      "renk_degisimi",
+      "operator"
+    ],
+    [
+      "kontrol",
+      "operator"
+    ],
+    [
+      "cozgu_kopusu",
+      "telci"
+    ],
+    [
+      "besleme",
+      "telci"
+    ]
+  ],
+  "top_uzunlugu": {
+    "tip": "ucgen",
+    "a": 20,
+    "b": 30,
+    "c": 40,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "renk_degisim_olasiligi": 0.3,
+  "desen_degisim_olasiligi": 0.4,
+  "renk_ekibi": 1,
+  "renk_ekip_payi": 0.85,
+  "renk_degisim": {
+    "tip": "ucgen",
+    "a": 60,
+    "b": 90,
+    "c": 150,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "ayar": {
+    "tip": "ucgen",
+    "a": 10,
+    "b": 20,
+    "c": 40,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
   "atki_kopus_saat": 1.5,
-  "cozgu_kopus_saat": 0.8,
+  "cozgu_kopus_saat": 2.0,
   "atki_mudahale": {
     "tip": "ucgen",
     "a": 0.5,
@@ -79,17 +369,9 @@
     "veri": [],
     "kaynak": "VARSAYIM"
   },
-  "ayar": {
-    "tip": "ucgen",
-    "a": 20,
-    "b": 35,
-    "c": 60,
-    "veri": [],
-    "kaynak": "VARSAYIM"
-  },
   "besleme_aralik": {
     "tip": "ustel",
-    "a": 60,
+    "a": 45,
     "b": 0.0,
     "c": 0.0,
     "veri": [],
@@ -103,9 +385,25 @@
     "veri": [],
     "kaynak": "VARSAYIM"
   },
+  "kontrol_aralik": {
+    "tip": "ustel",
+    "a": 30,
+    "b": 0.0,
+    "c": 0.0,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "kontrol_sure": {
+    "tip": "ucgen",
+    "a": 2,
+    "b": 4,
+    "c": 8,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
   "yurume_tezgah_arasi": 0.15,
   "yurume_sabit": 0.1,
-  "secim_kurali": "fifo",
+  "secim_kurali": "oncelikli",
   "ariza_mtbf_saat": 40.0,
   "ariza_onarim": {
     "tip": "ucgen",
@@ -115,7 +413,7 @@
     "veri": [],
     "kaynak": "VARSAYIM"
   },
-  "teknisyen_sayisi": 1,
+  "teknisyen_sayisi": 2,
   "cozgu_uzunlugu_m": 600.0,
   "cozgu_degisim": {
     "tip": "ucgen",
@@ -142,6 +440,8 @@
     ]
   ],
   "mola_duzeni": "toplu",
+  "yedek_sayisi": 2,
+  "mola_dalga_sayisi": 4,
   "kisisel_aralik": {
     "tip": "ustel",
     "a": 120,
@@ -160,5 +460,22 @@
   },
   "sure_gun": 7.0,
   "isinma_dk": 480.0,
-  "kaynaklar": []
+  "kaynaklar": [
+    [
+      "tezgahlar",
+      "FABRİKA"
+    ],
+    [
+      "operator_basina_tezgah",
+      "FABRİKA"
+    ],
+    [
+      "telci_basina_tezgah",
+      "FABRİKA"
+    ],
+    [
+      "renk_ekip_payi",
+      "FABRİKA (\"büyük oranda\"), oran VARSAYIM"
+    ]
+  ]
 }

@@ -1,0 +1,3 @@
+Bu klasördeki veriler modelden üretilmiş SENTETİK verilerdir (5 gün, tohum 99).
+Gerçek ölçüm değildir; formların ve `python -m src.hali.is_etudu analiz` komutunun denenmesi içindir.
+Kopuş kaydı süresi: --kayit-saat 120

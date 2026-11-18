@@ -11,7 +11,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-pytest                           # 46 test, ~60 sn
+pytest                           # 51 test, ~2 dk
 python -m src.mm1_dogrulama      # M/M/1 doğrulama tablosu  -> results/mm1_dogrulama.md
 python -m src.deney              # senaryolar, Welch, tampon eğrisi -> results/deney_raporu.md
 streamlit run app/panel.py       # parametre paneli
@@ -74,34 +74,42 @@ Tam rapor, kullanım tablosu ve grafikler: [results/deney_raporu.md](results/den
 
 ## Halı dokuma salonu ve iş etüdü (`src/hali/`)
 
-Seri hattın yanında ikinci bir model: bir halı dokuma salonunda **operatörlerin çalışma
-durumlarını** (müdahale, top indirme, ayar, besleme, yürüme, gözetim, mola) ve
-**tezgâhların dokuma durumlarını** (dokuma, operatör bekleme, kopuş, top indirme, ayar,
-çözgü değişimi, arıza) birlikte simüle eder. İş etüdü ile beslenecek şekilde tasarlandı:
-tüm parametreler `VARSAYIM` etiketli, ölçüm geldikçe `ÖLÇÜM` ile değişir. Tasarım, veri
-toplama formları ve iş akışı: [docs/hali_tasarim.md](docs/hali_tasarim.md).
+Seri hattın yanında ikinci bir model: fabrikanın 14 yüz yüze halı tezgâhını (Schönherr ve
+Van De Wiele; 42/50/70 tarak, 4-5 m, 6-8 renk) ve her tezgâhtaki operatör + telciyi birlikte
+simüle eder. Tezgâh durumları (dokuma, personel bekleme, kopuş, top indirme, desen ayarı,
+renk değişimi, çözgü değişimi, arıza) ve personel durumları (müdahale, kontrol, besleme,
+yürüme, gözetim, mola) dakika dakika izlenir; ana ölçüt **m²/vardiya**dır. Devir sabit değil,
+tezgâh başına bir dağılımdır. Renk değişimini çoğunlukla ayrı bir ekip yapar.
+
+Tezgâh bilgileri ve personel düzeni fabrikadan gelir (`FABRİKA`); devir, sıra sıklığı, kopuş,
+süreler ve olasılıklar `VARSAYIM`dır ve iş etüdü ölçümleriyle (`ÖLÇÜM`) değiştirilir.
+Tasarım ve formlar: [docs/hali_tasarim.md](docs/hali_tasarim.md).
 
 ```bash
-python -m src.hali.rapor 20          # H0-H10 senaryoları, atama eğrisi, iş örneklemesi -> results/hali/rapor.md
-streamlit run app/hali_panel.py      # halı paneli: durumlar, zaman çizelgesi, senaryolar, iş etüdü
+python -m src.hali.rapor 20                          # H0-H11 senaryoları -> results/hali/rapor.md
+streamlit run app/hali_panel.py                      # halı paneli
+python -m src.hali.is_etudu plan --baslangic 2026-12-01 --gun 10 --tur 3   # rastgele iş örneklemesi turları
+python -m src.hali.is_etudu ornek                    # denemek için sentetik saha verisi (data/hali/ornek_saha)
+python -m src.hali.is_etudu analiz --kayit-saat 120  # formları analiz et, parametreleri güncelle, modeli doğrula
 ```
 
 ![Halı paneli](docs/hali_panel.png)
 
-Varsayımsal parametrelerle (12 tezgâh, 20 replikasyon × 7 gün) H0'a göre üretim farkı:
+Varsayımsal parametrelerle (20 replikasyon × 7 gün), H0'a göre:
 
-| Senaryo | Operatör | m²/gün | Dokuma oranı | Operatör bekleme | Operatör doluluğu | Δ % |
-|---|---|---|---|---|---|---|
-| H0 Temel: 4 tezgâh/operatör, toplu mola | 3 | 4138 ± 39 | %70,2 | %18,5 | %52,9 | - |
-| H1 3 tezgâh/operatör | 4 | 4379 ± 37 | %74,3 | %13,7 | %41,1 | +5,8 |
-| H2 6 tezgâh/operatör | 2 | 3562 ± 41 | %60,5 | %29,8 | %71,0 | −13,9 |
-| H3 Kademeli mola | 3 | 4217 ± 35 | %71,6 | %17,0 | %54,6 | +1,9 |
-| H4 Yedek operatörle sırayla mola | 3+1 | 4481 ± 35 | %76,0 | %11,7 | %49,3 | +8,3 |
-| H5 Kopuşlar %30 az | 3 | 4402 ± 31 | %74,7 | %14,9 | %49,2 | +6,4 |
-| H6 SMED (ayar, çözgü −%40) | 3 | 4326 ± 34 | %73,4 | %16,2 | %51,3 | +4,5 |
-| H8 Duran tezgâh önce | 3 | 4259 ± 39 | %72,3 | %16,2 | %54,4 | +2,9 |
+| Senaryo | Personel | Salon m²/vardiya | Dokuma oranı | Personel bekleme | Δ % |
+|---|---|---|---|---|---|
+| H0 Temel: tezgâh başına 1 operatör + 1 telci, toplu mola | 28 | 2357 ± 10 | %71,1 | %7,8 | - |
+| H1 Kademeli mola (komşu aynı rol bakar) | 28 | 2472 ± 10 | %74,5 | %3,0 | +4,9 |
+| H2 Çapraz mola (operatör ve telci birbirine bakar) | 28 | 2489 ± 11 | %75,1 | %2,6 | +5,6 |
+| H3 Yedek personelle dalgalı mola | 30 | 2478 ± 10 | %74,7 | %2,8 | +5,1 |
+| H4 1 telci / 2 tezgâh | 21 | 2326 ± 10 | %70,1 | %9,0 | −1,3 |
+| H5 1 operatör / 2 tezgâh | 21 | 2298 ± 10 | %69,3 | %10,1 | −2,5 |
+| H6 1 telci / 2 tezgâh + çapraz mola | 21 | 2441 ± 9 | %73,6 | %4,3 | +3,6 |
+| H8 Renk değişimi %40 kısa (SMED) | 28 | 2424 ± 9 | %73,0 | %7,9 | +2,8 |
+| H9 Kopuşlar %30 az | 28 | 2467 ± 13 | %74,4 | %6,1 | +4,6 |
 
-Tam tablo, grafikler ve sanal iş örneklemesi: [results/hali/rapor.md](results/hali/rapor.md).
+Tam tablo, telci/operatör atama eğrileri ve sanal iş örneklemesi: [results/hali/rapor.md](results/hali/rapor.md).
 Bu sayılar yalnızca yöntemi gösterir; ölçümle güncellenmeden karar için kullanılmamalıdır.
 
 ## Model varsayımları

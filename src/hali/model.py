@@ -1,22 +1,26 @@
-"""Halı dokuma salonu: tezgâhlar, operatörler, teknisyen ve çözgü ekibi (SimPy).
+"""Halı dokuma salonu: tezgâhlar, operatörler, telciler, renk ekibi, teknisyen ve çözgü ekibi (SimPy).
 
 Akış
 ----
-Her tezgâh sırayla halı topu dokur. Dokuma sırasında dört olay yarışır:
-atkı kopuşu, çözgü kopuşu, mekanik arıza ve bobin/iplik besleme ihtiyacı
-(üçü tezgâhı durdurur, besleme durdurmaz). Top bitince operatör topu indirir;
-sıradaki sipariş başka kaliteyse operatör ürün değişimi/ayar yapar. Çözgü
-bitince çözgü ekibi çözgü levendini değiştirir. Arızayı teknisyen onarır.
+Her tezgâh kendi kalitesinde (tarak, sıra sıklığı, en) sırayla halı topu dokur.
+Devir değişkendir: her yeni topta tezgâhın devir dağılımından çekilir.
+Dokuma sırasında dört olay yarışır: atkı kopuşu, çözgü/hav kopuşu, mekanik arıza
+besleme ve halı kontrolü ihtiyacı (bu ikisi tezgâhı durdurmaz). Top bitince operatör topu indirir.
+Sonraki top renk değişimi gerektiriyorsa bunu çoğunlukla renk ekibi, kalan durumda
+operatör yapar; yalnızca desen değişiyorsa operatör kısa bir ayar yapar. Çözgü
+bitince çözgü ekibi, arıza olunca teknisyen gelir.
 
-Durduran bir işi bekleyen tezgâh "operatör bekleme" durumundadır: bu süre
-iş etüdündeki makine girişimi (machine interference) kaybıdır.
+Durduran bir işi bekleyen tezgâh "personel_bekleme" durumundadır: bu süre iş
+etüdündeki makine girişimi (machine interference) kaybıdır.
 
-Operatör, sorumlu olduğu tezgâhların iş listesinden seçim kuralına göre
-(fifo | en_yakin | oncelikli) iş alır, tezgâha yürür ve işi yapar. İş yoksa
-gözetimdedir. Molayı ve kişisel ihtiyacı iş aralarında kullanır. Mola düzeni:
-  toplu    : herkes aynı anda; molada tezgâhlarına kimse bakmaz
-  kademeli : komşu iki operatör sırayla molaya çıkar, biri diğerine bakar
-  yedek    : operatörler sırayla çıkar, bir yedek (yüzer) operatör bakar
+Personel: her işin bir rolü vardır (operatör ya da telci, `is_rolleri`). Kişi,
+sorumlu olduğu (tezgâh, rol) çiftlerindeki işlerden seçim kuralına göre iş alır,
+yürür ve işi yapar; iş yoksa gözetimdedir. Mola ve kişisel ihtiyaç iş aralarında
+kullanılır. Mola düzenleri:
+  toplu    : herkes aynı anda; molada işlerine kimse bakmaz
+  kademeli : aynı roldeki komşu iki kişi sırayla çıkar, biri diğerine bakar
+  capraz   : aynı tezgâhın operatörü ve telcisi sırayla çıkar, birbirine bakar
+  yedek    : personel dalgalar halinde çıkar, yüzer yedek personel bakar
 """
 from __future__ import annotations
 
@@ -27,26 +31,29 @@ import numpy as np
 import pandas as pd
 import simpy
 
-from src.hali.parametre import Dagilim, HaliParam
+from src.hali.parametre import ROLLER, Dagilim, HaliParam
 
-TEZGAH_DURUMLARI = ("dokuma", "operator_bekleme", "atki_kopusu", "cozgu_kopusu",
-                    "top_indirme", "ayar", "cozgu_degisimi", "ariza")
-OPERATOR_DURUMLARI = ("atki_kopusu", "cozgu_kopusu", "top_indirme", "ayar", "besleme",
-                      "yurume", "gozetim", "mola", "kisisel")
+TEZGAH_DURUMLARI = ("dokuma", "personel_bekleme", "atki_kopusu", "cozgu_kopusu", "top_indirme",
+                    "ayar", "renk_degisimi", "cozgu_degisimi", "ariza")
+PERSONEL_DURUMLARI = ("atki_kopusu", "cozgu_kopusu", "top_indirme", "ayar", "renk_degisimi", "besleme",
+                      "kontrol", "yurume", "gozetim", "mola", "kisisel")
+OPERATOR_DURUMLARI = PERSONEL_DURUMLARI          # geriye dönük ad
 ETIKET = {
-    "dokuma": "Dokuma", "operator_bekleme": "Operatör bekleme (girişim)",
-    "atki_kopusu": "Atkı kopuşu müdahalesi", "cozgu_kopusu": "Çözgü kopuşu müdahalesi",
-    "top_indirme": "Top indirme", "ayar": "Ürün değişimi / ayar", "cozgu_degisimi": "Çözgü değişimi",
-    "ariza": "Arıza (bekleme + onarım)", "besleme": "İplik / bobin besleme", "yurume": "Yürüme",
-    "gozetim": "Gözetim / boş", "mola": "Mola", "kisisel": "Kişisel ihtiyaç",
+    "dokuma": "Dokuma", "personel_bekleme": "Personel bekleme (girişim)",
+    "atki_kopusu": "Atkı kopuşu müdahalesi", "cozgu_kopusu": "Çözgü/hav kopuşu müdahalesi",
+    "top_indirme": "Top indirme", "ayar": "Desen ayarı", "renk_degisimi": "Renk değişimi",
+    "cozgu_degisimi": "Çözgü değişimi", "ariza": "Arıza (bekleme + onarım)", "besleme": "İplik / bobin besleme",
+    "kontrol": "Halı kontrolü / düzeltme",
+    "yurume": "Yürüme", "gozetim": "Gözetim / boş", "mola": "Mola", "kisisel": "Kişisel ihtiyaç",
 }
-# İş etüdü sınıflaması (operatör)
-OPERATOR_SINIF = {
+PERSONEL_SINIF = {
     "atki_kopusu": "Verimli iş", "cozgu_kopusu": "Verimli iş", "top_indirme": "Verimli iş",
-    "ayar": "Verimli iş", "besleme": "Verimli iş", "yurume": "Yardımcı iş (yürüme)",
-    "gozetim": "Boş / gözetim", "mola": "Mola ve kişisel", "kisisel": "Mola ve kişisel",
+    "ayar": "Verimli iş", "renk_degisimi": "Verimli iş", "besleme": "Verimli iş", "kontrol": "Verimli iş",
+    "yurume": "Yardımcı iş (yürüme)", "gozetim": "Boş / gözetim", "mola": "Mola ve kişisel",
+    "kisisel": "Mola ve kişisel",
 }
-DURDURAN_ISLER = ("atki_kopusu", "cozgu_kopusu", "top_indirme", "ayar")
+OPERATOR_SINIF = PERSONEL_SINIF
+ROL_ONEK = {"operator": "op", "telci": "tl", "yedek": "yd"}
 
 
 class Kaydedici:
@@ -81,17 +88,18 @@ class Kaydedici:
 class Is:
     tezgah: "_Tezgah"
     tur: str
+    rol: str
     talep_t: float
     sure: float
     durdurur: bool
     basladi: simpy.Event
     bitti: simpy.Event
-    operator: str | None = None
+    personel: str | None = None
     baslama_t: float = math.nan
 
 
 def _akis(seed: int, tur: int, i: int) -> np.random.Generator:
-    """Ortak rastgele sayılar: her tezgâh/operatör ve amaç için ayrı akış."""
+    """Ortak rastgele sayılar: her tezgâh/kişi ve amaç için ayrı akış."""
     return np.random.default_rng([seed, tur, i])
 
 
@@ -99,29 +107,27 @@ class _Tezgah:
     def __init__(self, salon: "_Salon", i: int):
         self.s, self.i, self.konum = salon, i, float(i)
         p, env = salon.p, salon.env
-        self.ad = f"T{i + 1:02d}"
+        self.tanim = p.tezgahlar[i]
+        self.ad = self.tanim.ad
         self.kayit = Kaydedici(env, p.isinma_dk, TEZGAH_DURUMLARI, "dokuma", self.ad, salon.cizelge)
         self.r_kopus, self.r_sure = _akis(salon.seed, 1, i), _akis(salon.seed, 2, i)
         self.r_siparis, self.r_ariza = _akis(salon.seed, 3, i), _akis(salon.seed, 4, i)
-        self.r_besleme = _akis(salon.seed, 5, i)
-        self.urun = self._urun_sec()
-        self.kalan_top = self.r_siparis.uniform(0.05, 1) * self.urun.top_uzunlugu.ornek(self.r_siparis)
+        self.r_besleme, self.r_devir = _akis(salon.seed, 5, i), _akis(salon.seed, 6, i)
+        self.devir = self.tanim.devir.ornek(self.r_devir)
+        self.kalan_top = self.r_siparis.uniform(0.05, 1) * p.top_uzunlugu.ornek(self.r_siparis)
         self.kalan_cozgu = self.r_siparis.uniform(0.05, 1) * p.cozgu_uzunlugu_m
         self.ariza_kalan = self._ariza_araligi()
         self.besleme_kalan = p.besleme_aralik.ornek(self.r_besleme)
+        self.r_kontrol = _akis(salon.seed, 7, i)
+        self.kontrol_kalan = p.kontrol_aralik.ornek(self.r_kontrol)
         self.m2 = 0.0
-        self.top_sayisi = 0
-        self.kopus_sayisi = 0
-        self.ariza_sayisi = 0
-        self.cozgu_sayisi = 0
+        self.top_sayisi = self.kopus_sayisi = self.ariza_sayisi = self.cozgu_sayisi = 0
+        self.renk_sayisi = self.desen_sayisi = 0
         self.dokuma_dk = 0.0
+        self.devir_dk = 0.0                # devir × dokuma dk (ağırlıklı ortalama için)
+        self.m2_vardiyalar: dict[int, float] = {}
         self._aktif = None
         env.process(self.calis())
-
-    def _urun_sec(self):
-        u = self.s.p.urunler
-        pay = np.array([x.oran for x in u], float)
-        return u[self.r_siparis.choice(len(u), p=pay / pay.sum())]
 
     def _ariza_araligi(self) -> float:
         m = self.s.p.ariza_mtbf_saat
@@ -130,40 +136,58 @@ class _Tezgah:
     def _olcumde(self) -> bool:
         return self.s.env.now >= self.s.p.isinma_dk
 
-    def _uretim_yaz(self, t0: float, t1: float, m2_dk: float) -> None:
-        """[t0, t1] dokuma aralığının ölçüm penceresindeki kısmını üretime ekler."""
-        sure = t1 - max(t0, self.s.p.isinma_dk)
+    def _uretim_yaz(self, t0: float, t1: float, m2_dk: float, devir: float) -> None:
+        p = self.s.p
+        bas = max(t0, p.isinma_dk)
+        sure = t1 - bas
         if sure > 0:
             self.m2 += sure * m2_dk
             self.dokuma_dk += sure
+            self.devir_dk += sure * devir
+            # vardiya bazında üretim (ölçüm başından itibaren vardiya no)
+            t = bas
+            while t < t1:
+                v = int((t - p.isinma_dk) // p.vardiya_dk)
+                son = min(t1, p.isinma_dk + (v + 1) * p.vardiya_dk)
+                self.m2_vardiyalar[v] = self.m2_vardiyalar.get(v, 0.0) + (son - t) * m2_dk
+                t = son
 
     def kapat(self) -> None:
         """Koşu sonunda süren dokumanın üretimini sayar."""
         if self._aktif is not None:
-            t0, m2_dk = self._aktif
-            self._uretim_yaz(t0, self.s.env.now, m2_dk)
+            self._uretim_yaz(*self._aktif[:1], self.s.env.now, *self._aktif[1:])
             self._aktif = None
 
-    def operatore_is(self, tur: str, dag: Dagilim):
+    def personele_is(self, tur: str, dag: Dagilim):
         env = self.s.env
-        is_ = Is(self, tur, env.now, dag.ornek(self.r_sure), True, env.event(), env.event())
-        self.kayit.durum("operator_bekleme")
+        is_ = Is(self, tur, self.s.p.rol(tur), env.now, dag.ornek(self.r_sure), True, env.event(), env.event())
+        self.kayit.durum("personel_bekleme")
         self.s.talep_ekle(is_)
         yield is_.basladi
         self.kayit.durum(tur)
         yield is_.bitti
 
     def calis(self):
-        s, p, env = self.s, self.s.p, self.s.env
+        s, p, env, tz = self.s, self.s.p, self.s.env, self.tanim
         while True:
             if self.kalan_top <= 1e-9:
-                yield from self.operatore_is("top_indirme", p.top_indirme)
+                yield from self.personele_is("top_indirme", p.top_indirme)
                 self.top_sayisi += self._olcumde()
-                yeni = self._urun_sec()
-                if yeni is not self.urun:
-                    self.urun = yeni
-                    yield from self.operatore_is("ayar", p.ayar)
-                self.kalan_top = self.urun.top_uzunlugu.ornek(self.r_siparis)
+                u_degisim, u_ekip = self.r_siparis.random(2)
+                if u_degisim < p.renk_degisim_olasiligi:
+                    self.renk_sayisi += self._olcumde()
+                    if u_ekip < p.renk_ekip_payi:
+                        self.kayit.durum("renk_degisimi")
+                        with s.renk_ekibi.request() as r:
+                            yield r
+                            yield env.timeout(p.renk_degisim.ornek(self.r_sure))
+                    else:
+                        yield from self.personele_is("renk_degisimi", p.renk_degisim)
+                elif u_degisim < p.renk_degisim_olasiligi + p.desen_degisim_olasiligi:
+                    self.desen_sayisi += self._olcumde()
+                    yield from self.personele_is("ayar", p.ayar)
+                self.kalan_top = p.top_uzunlugu.ornek(self.r_siparis)
+                self.devir = tz.devir.ornek(self.r_devir)
             if self.kalan_cozgu <= 1e-9:
                 self.kayit.durum("cozgu_degisimi")
                 with s.ekip.request() as r:
@@ -172,10 +196,10 @@ class _Tezgah:
                 self.kalan_cozgu = p.cozgu_uzunlugu_m
                 self.cozgu_sayisi += self._olcumde()
 
-            u = self.urun
-            hiz = p.devir / u.atki_sikligi                       # m / dk
-            ka = p.atki_kopus_saat * u.kopus_carpani / 60
-            kc = p.cozgu_kopus_saat * u.kopus_carpani / 60
+            hiz = tz.hiz_m_dk(self.devir, p.atki_sistemi)        # m / dk
+            m2_dk = hiz * tz.en_m * p.yuz_sayisi
+            ka = p.atki_kopus_saat * tz.kopus_carpani / 60
+            kc = p.cozgu_kopus_saat * tz.kopus_carpani / 60
             adaylar = {
                 "top": self.kalan_top / hiz,
                 "cozgu_bitti": self.kalan_cozgu / hiz,
@@ -183,29 +207,35 @@ class _Tezgah:
                 "cozgu_kopusu": self.r_kopus.exponential(1 / kc) if kc > 0 else math.inf,
                 "ariza": self.ariza_kalan,
                 "besleme": self.besleme_kalan,
+                "kontrol": self.kontrol_kalan,
             }
             olay = min(adaylar, key=adaylar.get)
             dt = adaylar[olay]
             self.kayit.durum("dokuma")
             t0 = env.now
-            self._aktif = (t0, hiz * u.en_m * p.yuz_sayisi)
+            self._aktif = (t0, m2_dk, self.devir)
             yield env.timeout(dt)
             self._aktif = None
-            self._uretim_yaz(t0, env.now, hiz * u.en_m * p.yuz_sayisi)
+            self._uretim_yaz(t0, env.now, m2_dk, self.devir)
             self.kalan_top = max(0.0, self.kalan_top - dt * hiz) if olay != "top" else 0.0
             self.kalan_cozgu = max(0.0, self.kalan_cozgu - dt * hiz) if olay != "cozgu_bitti" else 0.0
             self.ariza_kalan -= dt
             self.besleme_kalan -= dt
+            self.kontrol_kalan -= dt
 
-            if olay == "besleme":
-                is_ = Is(self, "besleme", env.now, p.besleme_sure.ornek(self.r_sure), False,
+            if olay in ("besleme", "kontrol"):           # tezgâhı durdurmayan işler
+                sure_d = p.besleme_sure if olay == "besleme" else p.kontrol_sure
+                is_ = Is(self, olay, p.rol(olay), env.now, sure_d.ornek(self.r_sure), False,
                          env.event(), env.event())
                 s.talep_ekle(is_)
-                self.besleme_kalan = p.besleme_aralik.ornek(self.r_besleme)
+                if olay == "besleme":
+                    self.besleme_kalan = p.besleme_aralik.ornek(self.r_besleme)
+                else:
+                    self.kontrol_kalan = p.kontrol_aralik.ornek(self.r_kontrol)
             elif olay in ("atki_kopusu", "cozgu_kopusu"):
                 self.kopus_sayisi += self._olcumde()
                 dag = p.atki_mudahale if olay == "atki_kopusu" else p.cozgu_mudahale
-                yield from self.operatore_is(olay, dag)
+                yield from self.personele_is(olay, dag)
             elif olay == "ariza":
                 self.ariza_sayisi += self._olcumde()
                 self.kayit.durum("ariza")
@@ -215,15 +245,17 @@ class _Tezgah:
                 self.ariza_kalan = self._ariza_araligi()
 
 
-class _Operator:
-    def __init__(self, salon: "_Salon", k: int, tezgahlar: list[int], yedek: bool = False):
-        self.s, self.k, self.yedek = salon, k, yedek
+class _Personel:
+    def __init__(self, salon: "_Salon", rol: str, k: int, tezgahlar: list[int]):
+        self.s, self.rol, self.k = salon, rol, k
         p, env = salon.p, salon.env
-        self.ad = "Yedek" if yedek else f"O{k + 1}"
-        self.tezgahlar = set(tezgahlar)
+        self.yedek = rol == "yedek"
+        self.ad = {"operator": "O", "telci": "TL", "yedek": "Y"}[rol] + f"{k + 1:02d}"
+        self.tezgahlar = list(tezgahlar)
+        self.isler = {(i, rol) for i in tezgahlar}
         self.konum = float(np.mean(tezgahlar)) if tezgahlar else (p.tezgah_sayisi - 1) / 2
-        self.kayit = Kaydedici(env, p.isinma_dk, OPERATOR_DURUMLARI, "gozetim", self.ad, salon.cizelge)
-        self.r = _akis(salon.seed, 10, k)
+        self.kayit = Kaydedici(env, p.isinma_dk, PERSONEL_DURUMLARI, "gozetim", self.ad, salon.cizelge)
+        self.r = _akis(salon.seed, 10 + ROLLER.index(rol) if rol in ROLLER else 19, k)
         self.mola_kuyrugu: list[float] = []
         self.kisisel_bekliyor = 0
         self.molada = False
@@ -231,7 +263,7 @@ class _Operator:
         self._uyari = env.event()
         self.is_sayisi = 0
         env.process(self.calis())
-        if not yedek:
+        if not self.yedek:
             env.process(self.mola_takvimi())
             env.process(self.kisisel_ihtiyac())
 
@@ -239,19 +271,24 @@ class _Operator:
         if self.bosta and not self._uyari.triggered:
             self._uyari.succeed()
 
-    def sorumlu(self) -> set[int]:
-        kume = set(self.tezgahlar)
-        for o in self.s.operatorler:
-            if o is not self and o.molada and self.s.kapsayan(o) is self:
-                kume |= o.tezgahlar
+    def sorumlu(self) -> set:
+        kume = set(self.isler)
+        for o in self.s.personel:
+            if o is not self and o.molada and self in self.s.kapsayanlar(o):
+                kume |= o.isler
         return kume
 
     def mola_ofseti(self, sure: float) -> float:
-        d = self.s.p.mola_duzeni
+        p = self.s.p
+        d = p.mola_duzeni
         if d == "kademeli":
             return sure if self.k % 2 else 0.0
+        if d == "capraz":
+            return sure if self.rol == "telci" else 0.0
         if d == "yedek":
-            return self.k * sure
+            dalga = p.mola_dalga_sayisi
+            kaydir = dalga // 2 if self.rol == "telci" else 0
+            return ((self.k + kaydir) % dalga) * sure
         return 0.0
 
     def mola_takvimi(self):
@@ -284,8 +321,7 @@ class _Operator:
                 sure = self.mola_kuyrugu.pop(0)
                 self.molada = True
                 self.kayit.durum("mola")
-                k = s.kapsayan(self)
-                if k is not None:
+                for k in s.kapsayanlar(self):
                     k.uyandir()
                 yield env.timeout(sure)
                 self.molada = False
@@ -309,23 +345,25 @@ class _Operator:
                 self.kayit.durum("yurume")
                 yield env.timeout(p.yurume_sabit + mesafe * p.yurume_tezgah_arasi)
                 self.konum = is_.tezgah.konum
-            is_.operator, is_.baslama_t = self.ad, env.now
+            is_.personel, is_.baslama_t = self.ad, env.now
             is_.basladi.succeed()
             self.kayit.durum(is_.tur)
             yield env.timeout(is_.sure)
             is_.bitti.succeed()
             if env.now >= p.isinma_dk:
                 self.is_sayisi += 1
-                s.isler.append((is_.tezgah.ad, is_.tur, is_.talep_t, is_.baslama_t, env.now, self.ad,
-                                is_.durdurur))
+                s.isler.append((is_.tezgah.ad, is_.tur, is_.rol, is_.talep_t, is_.baslama_t, env.now,
+                                self.ad, self.rol, is_.durdurur))
 
 
 class _Salon:
     def __init__(self, p: HaliParam, seed: int):
-        if p.mola_duzeni not in ("toplu", "kademeli", "yedek"):
-            raise ValueError("mola_duzeni: toplu | kademeli | yedek")
+        if p.mola_duzeni not in ("toplu", "kademeli", "capraz", "yedek"):
+            raise ValueError("mola_duzeni: toplu | kademeli | capraz | yedek")
         if p.secim_kurali not in ("fifo", "en_yakin", "oncelikli"):
             raise ValueError("secim_kurali: fifo | en_yakin | oncelikli")
+        if set(dict(p.is_rolleri).values()) - set(ROLLER):
+            raise ValueError(f"is_rolleri yalnızca {ROLLER} rollerini kullanabilir")
         self.p, self.seed = p, seed
         self.env = simpy.Environment()
         self.cizelge: list = []
@@ -333,40 +371,55 @@ class _Salon:
         self.talepler: list[Is] = []
         self.teknisyen = simpy.Resource(self.env, p.teknisyen_sayisi)
         self.ekip = simpy.Resource(self.env, p.cozgu_ekibi)
-        self.operatorler: list[_Operator] = []
-        n, m = p.tezgah_sayisi, p.operator_basina_tezgah
-        for k in range(p.operator_sayisi):
-            self.operatorler.append(_Operator(self, k, list(range(k * m, min(n, (k + 1) * m)))))
-        self.yedek = _Operator(self, p.operator_sayisi, [], yedek=True) if p.mola_duzeni == "yedek" else None
-        if self.yedek:
-            self.operatorler.append(self.yedek)
+        self.renk_ekibi = simpy.Resource(self.env, max(1, p.renk_ekibi))
+        n = p.tezgah_sayisi
+        self.personel: list[_Personel] = []
+        self.rol_listesi: dict[str, list[_Personel]] = {}
+        for rol in ROLLER:
+            m = p.operator_basina_tezgah if rol == "operator" else p.telci_basina_tezgah
+            kisiler = [_Personel(self, rol, k, list(range(k * m, min(n, (k + 1) * m))))
+                       for k in range(p.kisi_sayisi(rol))]
+            self.rol_listesi[rol] = kisiler
+            self.personel += kisiler
+        self.yedekler = [_Personel(self, "yedek", k, []) for k in range(p.yedek_sayisi)] \
+            if p.mola_duzeni == "yedek" else []
+        self.personel += self.yedekler
+        self._kapsama = {o: self._kapsayanlari_bul(o) for o in self.personel}
         self.tezgahlar = [_Tezgah(self, i) for i in range(n)]
 
-    def kapsayan(self, o: _Operator) -> _Operator | None:
+    def _kapsayanlari_bul(self, o: _Personel) -> list[_Personel]:
         d = self.p.mola_duzeni
+        if o.yedek or d == "toplu":
+            return []
         if d == "yedek":
-            return self.yedek
+            return list(self.yedekler)
         if d == "kademeli":
-            duz = [x for x in self.operatorler if not x.yedek]
-            k = o.k + 1 if o.k % 2 == 0 and o.k + 1 < len(duz) else o.k - 1
-            return duz[k] if 0 <= k < len(duz) and k != o.k else None
-        return None
+            liste = self.rol_listesi[o.rol]
+            k = o.k + 1 if o.k % 2 == 0 and o.k + 1 < len(liste) else o.k - 1
+            return [liste[k]] if 0 <= k < len(liste) and k != o.k else []
+        diger = "telci" if o.rol == "operator" else "operator"       # capraz
+        ilk = o.tezgahlar[0]
+        return [x for x in self.rol_listesi[diger] if ilk in x.tezgahlar][:1]
+
+    def kapsayanlar(self, o: _Personel) -> list[_Personel]:
+        return self._kapsama[o]
 
     def talep_ekle(self, is_: Is) -> None:
         self.talepler.append(is_)
-        for o in self.operatorler:
-            if o.bosta and is_.tezgah.i in o.sorumlu():
+        anahtar = (is_.tezgah.i, is_.rol)
+        for o in self.personel:
+            if o.bosta and anahtar in o.sorumlu():
                 o.uyandir()
 
-    def is_sec(self, o: _Operator) -> Is | None:
+    def is_sec(self, o: _Personel) -> Is | None:
         kume = o.sorumlu()
-        aday = [t for t in self.talepler if t.tezgah.i in kume]
+        aday = [t for t in self.talepler if (t.tezgah.i, t.rol) in kume]
         if not aday:
             return None
         kural = self.p.secim_kurali
         if kural == "en_yakin":
             return min(aday, key=lambda t: (abs(o.konum - t.tezgah.konum), t.talep_t))
-        if kural == "oncelikli":     # tezgâhı durduran işler önce
+        if kural == "oncelikli":
             return min(aday, key=lambda t: (not t.durdurur, t.talep_t))
         return aday[0]
 
@@ -375,9 +428,14 @@ class _Salon:
 class HaliSonuc:
     ozet: dict
     tezgah: pd.DataFrame
-    operator: pd.DataFrame
+    personel: pd.DataFrame
     cizelge: pd.DataFrame = field(repr=False)
     isler: pd.DataFrame = field(repr=False)
+    vardiya_uretim: pd.DataFrame = field(default=None, repr=False)   # tezgah, vardiya, m2
+
+    @property
+    def operator(self) -> pd.DataFrame:     # geriye dönük ad
+        return self.personel
 
 
 def kos(p: HaliParam, seed: int) -> HaliSonuc:
@@ -386,47 +444,55 @@ def kos(p: HaliParam, seed: int) -> HaliSonuc:
     for t in s.tezgahlar:
         t.kapat()
     olcum_saat = p.sure_gun * 24
+    vardiya_sayisi = olcum_saat * 60 / p.vardiya_dk
 
     tz = []
     for t in s.tezgahlar:
         r = t.kayit.oranlar()
-        tz.append({"tezgah": t.ad, **r, "m2": t.m2, "top": t.top_sayisi, "kopus": t.kopus_sayisi,
-                   "ariza_sayisi": t.ariza_sayisi, "cozgu_sayisi": t.cozgu_sayisi,
-                   "operator": next(o.ad for o in s.operatorler if t.i in o.tezgahlar)})
+        tz.append({"tezgah": t.ad, "marka": t.tanim.marka, "tarak": t.tanim.tarak, **r,
+                   "m2": t.m2, "m2_vardiya": t.m2 / vardiya_sayisi,
+                   "ort_devir": t.devir_dk / t.dokuma_dk if t.dokuma_dk else 0.0,
+                   "top": t.top_sayisi, "kopus": t.kopus_sayisi, "renk_degisimi_sayisi": t.renk_sayisi,
+                   "desen_sayisi": t.desen_sayisi, "ariza_sayisi": t.ariza_sayisi, "cozgu_sayisi": t.cozgu_sayisi})
     tz = pd.DataFrame(tz)
-    op = []
-    for o in s.operatorler:
+    pr = []
+    for o in s.personel:
         r = o.kayit.oranlar()
-        is_payi = sum(r[d] for d in OPERATOR_DURUMLARI if OPERATOR_SINIF[d] == "Verimli iş")
-        op.append({"operator": o.ad, **r, "verimli_is": is_payi,
-                   "doluluk": is_payi + r["yurume"], "is_sayisi": o.is_sayisi,
-                   "tezgah_sayisi": len(o.tezgahlar)})
-    op = pd.DataFrame(op)
-    isler = pd.DataFrame(s.isler, columns=["tezgah", "tur", "talep", "baslama", "bitis", "operator", "durdurur"])
+        verimli = sum(r[d] for d in PERSONEL_DURUMLARI if PERSONEL_SINIF[d] == "Verimli iş")
+        pr.append({"personel": o.ad, "rol": o.rol, **r, "verimli_is": verimli, "doluluk": verimli + r["yurume"],
+                   "is_sayisi": o.is_sayisi, "tezgah_sayisi": len(o.tezgahlar)})
+    pr = pd.DataFrame(pr)
+    isler = pd.DataFrame(s.isler, columns=["tezgah", "tur", "rol", "talep", "baslama", "bitis", "personel",
+                                           "personel_rol", "durdurur"])
     isler["bekleme"] = isler["baslama"] - isler["talep"]
-    duz = op[op["operator"] != "Yedek"]
-
+    durduran = isler[isler["durdurur"]]
     toplam_m2 = float(tz["m2"].sum())
     dokuma_saat = sum(t.dokuma_dk for t in s.tezgahlar) / 60
-    operator_n = len(op)
-    durduran = isler[isler["durdurur"]]
+
     ozet = {
+        "m2_vardiya": toplam_m2 / vardiya_sayisi,
+        "m2_vardiya_tezgah": toplam_m2 / vardiya_sayisi / p.tezgah_sayisi,
         "m2_gun": toplam_m2 / p.sure_gun,
-        "m2_vardiya": toplam_m2 / (olcum_saat * 60 / p.vardiya_dk),
         "tezgah_verimi": float(tz["dokuma"].mean()),
-        "girisim": float(tz["operator_bekleme"].mean()),
-        "operator_doluluk": float(duz["doluluk"].mean()),
-        "operator_verimli": float(duz["verimli_is"].mean()),
-        "operator_gozetim": float(duz["gozetim"].mean()),
-        "m2_operator_saat": toplam_m2 / (operator_n * olcum_saat),
+        "girisim": float(tz["personel_bekleme"].mean()),
+        "m2_personel_saat": toplam_m2 / (len(pr) * olcum_saat),
         "ort_bekleme_dk": float(durduran["bekleme"].mean()) if len(durduran) else 0.0,
         "kopus_dokuma_saati": float(tz["kopus"].sum() / dokuma_saat) if dokuma_saat else 0.0,
-        "top_gun": float(tz["top"].sum() / p.sure_gun),
-        "operator_sayisi": operator_n,
+        "top_vardiya": float(tz["top"].sum() / vardiya_sayisi),
+        "personel_sayisi": len(pr),
+        "operator_sayisi": int((pr["rol"] == "operator").sum()),
+        "telci_sayisi": int((pr["rol"] == "telci").sum()),
     }
+    for rol, onek in ROL_ONEK.items():
+        g = pr[pr["rol"] == rol]
+        if len(g):
+            ozet[f"{rol}_doluluk"] = float(g["doluluk"].mean())
+            for d in PERSONEL_DURUMLARI:
+                ozet[f"{onek}:{d}"] = float(g[d].mean())
     for d in TEZGAH_DURUMLARI:
         ozet[f"tz:{d}"] = float(tz[d].mean())
-    for d in OPERATOR_DURUMLARI:
-        ozet[f"op:{d}"] = float(duz[d].mean())
     cizelge = pd.DataFrame(s.cizelge, columns=["kaynak", "bas", "bit", "durum"])
-    return HaliSonuc(ozet, tz, op, cizelge, isler)
+    n_v = int(round(vardiya_sayisi))
+    vu = pd.DataFrame([(t.ad, v + 1, t.m2_vardiyalar.get(v, 0.0)) for t in s.tezgahlar for v in range(n_v)],
+                      columns=["tezgah", "vardiya", "m2"])
+    return HaliSonuc(ozet, tz, pr, cizelge, isler, vu)
