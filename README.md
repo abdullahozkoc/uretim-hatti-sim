@@ -11,7 +11,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-pytest                           # 32 test, ~50 sn
+pytest                           # 46 test, ~60 sn
 python -m src.mm1_dogrulama      # M/M/1 doğrulama tablosu  -> results/mm1_dogrulama.md
 python -m src.deney              # senaryolar, Welch, tampon eğrisi -> results/deney_raporu.md
 streamlit run app/panel.py       # parametre paneli
@@ -72,6 +72,38 @@ Tam rapor, kullanım tablosu ve grafikler: [results/deney_raporu.md](results/den
 
 30 replikasyonluk ısınmasız koşularda hattaki WIP yaklaşık 130 dakikada, saatlik çıkış yaklaşık 120 dakikada kararlı duruma oturuyor. Kullanılan 500 dk ısınma bunun yaklaşık 4 katı, yani dokümandaki karar güvenli tarafta.
 
+## Halı dokuma salonu ve iş etüdü (`src/hali/`)
+
+Seri hattın yanında ikinci bir model: bir halı dokuma salonunda **operatörlerin çalışma
+durumlarını** (müdahale, top indirme, ayar, besleme, yürüme, gözetim, mola) ve
+**tezgâhların dokuma durumlarını** (dokuma, operatör bekleme, kopuş, top indirme, ayar,
+çözgü değişimi, arıza) birlikte simüle eder. İş etüdü ile beslenecek şekilde tasarlandı:
+tüm parametreler `VARSAYIM` etiketli, ölçüm geldikçe `ÖLÇÜM` ile değişir. Tasarım, veri
+toplama formları ve iş akışı: [docs/hali_tasarim.md](docs/hali_tasarim.md).
+
+```bash
+python -m src.hali.rapor 20          # H0-H10 senaryoları, atama eğrisi, iş örneklemesi -> results/hali/rapor.md
+streamlit run app/hali_panel.py      # halı paneli: durumlar, zaman çizelgesi, senaryolar, iş etüdü
+```
+
+![Halı paneli](docs/hali_panel.png)
+
+Varsayımsal parametrelerle (12 tezgâh, 20 replikasyon × 7 gün) H0'a göre üretim farkı:
+
+| Senaryo | Operatör | m²/gün | Dokuma oranı | Operatör bekleme | Operatör doluluğu | Δ % |
+|---|---|---|---|---|---|---|
+| H0 Temel: 4 tezgâh/operatör, toplu mola | 3 | 4138 ± 39 | %70,2 | %18,5 | %52,9 | - |
+| H1 3 tezgâh/operatör | 4 | 4379 ± 37 | %74,3 | %13,7 | %41,1 | +5,8 |
+| H2 6 tezgâh/operatör | 2 | 3562 ± 41 | %60,5 | %29,8 | %71,0 | −13,9 |
+| H3 Kademeli mola | 3 | 4217 ± 35 | %71,6 | %17,0 | %54,6 | +1,9 |
+| H4 Yedek operatörle sırayla mola | 3+1 | 4481 ± 35 | %76,0 | %11,7 | %49,3 | +8,3 |
+| H5 Kopuşlar %30 az | 3 | 4402 ± 31 | %74,7 | %14,9 | %49,2 | +6,4 |
+| H6 SMED (ayar, çözgü −%40) | 3 | 4326 ± 34 | %73,4 | %16,2 | %51,3 | +4,5 |
+| H8 Duran tezgâh önce | 3 | 4259 ± 39 | %72,3 | %16,2 | %54,4 | +2,9 |
+
+Tam tablo, grafikler ve sanal iş örneklemesi: [results/hali/rapor.md](results/hali/rapor.md).
+Bu sayılar yalnızca yöntemi gösterir; ölçümle güncellenmeden karar için kullanılmamalıdır.
+
 ## Model varsayımları
 
 - **Hat:** 5 istasyon, istasyonlar arasında `simpy.Store(capacity=k)` ara stoklar. İlk istasyonun önünde sınırsız hammadde var.
@@ -119,7 +151,7 @@ Tamamlananlar:
 
 1. **Gerçek veriyle validation:** Staj hattından 100-200 süre ölçümü ve duruş kayıtları alınıp model verimi gerçek verimle karşılaştırılır (hedef: %5-10 fark).
 2. **Tampon dağıtımı optimizasyonu:** Toplam tampon sayısı sabitken en iyi dağılım aranır (simülasyon tabanlı optimizasyon). İlk sürümde kapsam dışıydı.
-3. **Ürün çeşitliliği ve hazırlık süreleri:** Halı dokuma planlama projesiyle bağlantı kurulur.
+3. **Ürün çeşitliliği ve hazırlık süreleri:** Halı dokuma salonu modeli (`src/hali/`) ilk adımı attı; sipariş sıralama ve planlama projesiyle bağlantı kurulabilir.
 4. **OEE projesiyle entegrasyon:** Modelden OEE (kullanılabilirlik × performans × kalite) hesaplanır ve gerçek OEE verisiyle karşılaştırılır.
 
 ## Klasör yapısı
@@ -134,10 +166,12 @@ src/
   analiz.py         # güven aralığı, eşleştirilmiş fark, hareketli ortalama
   kalibrasyon.py    # dağılım uydurma, MTBF/MTTR
   maliyet.py        # yatırım, NBD, geri ödeme, başabaş
-app/panel.py        # Streamlit arayüzü
-tests/              # test_mm1, test_hat, test_deney, test_panel
+  hali/             # halı dokuma salonu: parametre, model, senaryo, is_etudu, rapor
+app/panel.py        # Streamlit arayüzü (seri hat)
+app/hali_panel.py   # Streamlit arayüzü (halı dokuma + iş etüdü)
+tests/              # test_mm1, test_hat, test_deney, test_panel, test_hali, test_hali_panel
 results/            # üretilen tablolar ve grafikler
-data/               # gerçek veri (git'e eklenmez)
+data/               # gerçek veri (git'e eklenmez); data/hali/is_etudu/ form şablonları
 ```
 
 ## Proje özeti (CV ve mülakat için)

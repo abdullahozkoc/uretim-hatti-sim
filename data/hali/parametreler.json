@@ -1,0 +1,164 @@
+{
+  "tezgah_sayisi": 12,
+  "operator_basina_tezgah": 4,
+  "devir": 100.0,
+  "yuz_sayisi": 2,
+  "urunler": [
+    {
+      "ad": "A (seyrek, 1.000 sık)",
+      "oran": 0.5,
+      "atki_sikligi": 2000,
+      "en_m": 4.0,
+      "kopus_carpani": 0.8,
+      "top_uzunlugu": {
+        "tip": "ucgen",
+        "a": 20,
+        "b": 30,
+        "c": 40,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "B (orta, 1.250 sık)",
+      "oran": 0.3,
+      "atki_sikligi": 2500,
+      "en_m": 4.0,
+      "kopus_carpani": 1.0,
+      "top_uzunlugu": {
+        "tip": "ucgen",
+        "a": 20,
+        "b": 30,
+        "c": 40,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kaynak": "VARSAYIM"
+    },
+    {
+      "ad": "C (sık, 1.500 sık)",
+      "oran": 0.2,
+      "atki_sikligi": 3000,
+      "en_m": 4.0,
+      "kopus_carpani": 1.4,
+      "top_uzunlugu": {
+        "tip": "ucgen",
+        "a": 20,
+        "b": 30,
+        "c": 40,
+        "veri": [],
+        "kaynak": "VARSAYIM"
+      },
+      "kaynak": "VARSAYIM"
+    }
+  ],
+  "atki_kopus_saat": 1.5,
+  "cozgu_kopus_saat": 0.8,
+  "atki_mudahale": {
+    "tip": "ucgen",
+    "a": 0.5,
+    "b": 1.0,
+    "c": 2.0,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "cozgu_mudahale": {
+    "tip": "ucgen",
+    "a": 1.0,
+    "b": 2.5,
+    "c": 5.0,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "top_indirme": {
+    "tip": "ucgen",
+    "a": 6,
+    "b": 10,
+    "c": 15,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "ayar": {
+    "tip": "ucgen",
+    "a": 20,
+    "b": 35,
+    "c": 60,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "besleme_aralik": {
+    "tip": "ustel",
+    "a": 60,
+    "b": 0.0,
+    "c": 0.0,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "besleme_sure": {
+    "tip": "ucgen",
+    "a": 2,
+    "b": 3,
+    "c": 5,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "yurume_tezgah_arasi": 0.15,
+  "yurume_sabit": 0.1,
+  "secim_kurali": "fifo",
+  "ariza_mtbf_saat": 40.0,
+  "ariza_onarim": {
+    "tip": "ucgen",
+    "a": 20,
+    "b": 45,
+    "c": 120,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "teknisyen_sayisi": 1,
+  "cozgu_uzunlugu_m": 600.0,
+  "cozgu_degisim": {
+    "tip": "ucgen",
+    "a": 120,
+    "b": 180,
+    "c": 300,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "cozgu_ekibi": 1,
+  "vardiya_dk": 480.0,
+  "molalar": [
+    [
+      120,
+      15
+    ],
+    [
+      240,
+      30
+    ],
+    [
+      360,
+      15
+    ]
+  ],
+  "mola_duzeni": "toplu",
+  "kisisel_aralik": {
+    "tip": "ustel",
+    "a": 120,
+    "b": 0.0,
+    "c": 0.0,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "kisisel_sure": {
+    "tip": "ucgen",
+    "a": 3,
+    "b": 5,
+    "c": 10,
+    "veri": [],
+    "kaynak": "VARSAYIM"
+  },
+  "sure_gun": 7.0,
+  "isinma_dk": 480.0,
+  "kaynaklar": []
+}

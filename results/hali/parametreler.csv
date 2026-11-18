@@ -1,0 +1,32 @@
+Parametre,Değer,Kaynak
+tezgah_sayisi,12,VARSAYIM
+operator_basina_tezgah,4,VARSAYIM
+devir,100.0,VARSAYIM
+yuz_sayisi,2,VARSAYIM
+atki_kopus_saat,1.5,VARSAYIM
+cozgu_kopus_saat,0.8,VARSAYIM
+atki_mudahale,"Üçgen(0.5, 1, 2)",VARSAYIM
+cozgu_mudahale,"Üçgen(1, 2.5, 5)",VARSAYIM
+top_indirme,"Üçgen(6, 10, 15)",VARSAYIM
+ayar,"Üçgen(20, 35, 60)",VARSAYIM
+besleme_aralik,Üstel(ort 60),VARSAYIM
+besleme_sure,"Üçgen(2, 3, 5)",VARSAYIM
+yurume_tezgah_arasi,0.15,VARSAYIM
+yurume_sabit,0.1,VARSAYIM
+secim_kurali,fifo,VARSAYIM
+ariza_mtbf_saat,40.0,VARSAYIM
+ariza_onarim,"Üçgen(20, 45, 120)",VARSAYIM
+teknisyen_sayisi,1,VARSAYIM
+cozgu_uzunlugu_m,600.0,VARSAYIM
+cozgu_degisim,"Üçgen(120, 180, 300)",VARSAYIM
+cozgu_ekibi,1,VARSAYIM
+vardiya_dk,480.0,VARSAYIM
+molalar,"((120, 15), (240, 30), (360, 15))",VARSAYIM
+mola_duzeni,toplu,VARSAYIM
+kisisel_aralik,Üstel(ort 120),VARSAYIM
+kisisel_sure,"Üçgen(3, 5, 10)",VARSAYIM
+sure_gun,7.0,VARSAYIM
+isinma_dk,480.0,VARSAYIM
+"ürün: A (seyrek, 1.000 sık)","pay %50, 2000 atkı/m, en 4 m, kopuş ×0.8, top Üçgen(20, 30, 40)",VARSAYIM
+"ürün: B (orta, 1.250 sık)","pay %30, 2500 atkı/m, en 4 m, kopuş ×1, top Üçgen(20, 30, 40)",VARSAYIM
+"ürün: C (sık, 1.500 sık)","pay %20, 3000 atkı/m, en 4 m, kopuş ×1.4, top Üçgen(20, 30, 40)",VARSAYIM

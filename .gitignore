@@ -4,3 +4,7 @@ __pycache__/
 .pytest_cache/
 data/*
 !data/.gitkeep
+!data/hali/
+data/hali/*
+!data/hali/is_etudu/
+!data/hali/parametreler.json

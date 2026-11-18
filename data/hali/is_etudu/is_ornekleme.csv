@@ -1,0 +1,6 @@
+tarih,tur,saat,gozlemci,kaynak_tipi,kaynak,durum,not
+2026-12-01,1,08:17,ORNEK,operator,O1,atki_kopusu,ORNEK SATIR - silin
+2026-12-01,1,08:17,ORNEK,operator,O2,gozetim,ORNEK SATIR - silin
+2026-12-01,1,08:17,ORNEK,tezgah,T01,dokuma,ORNEK SATIR - silin
+2026-12-01,1,08:17,ORNEK,tezgah,T02,operator_bekleme,ORNEK SATIR - silin
+2026-12-01,1,08:17,ORNEK,tezgah,T03,atki_kopusu,ORNEK SATIR - silin
