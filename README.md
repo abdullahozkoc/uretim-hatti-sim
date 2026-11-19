@@ -11,7 +11,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-pytest                           # 32 test, ~50 sn
+pytest                           # 57 test, ~2 dk
 python -m src.mm1_dogrulama      # M/M/1 doğrulama tablosu  -> results/mm1_dogrulama.md
 python -m src.deney              # senaryolar, Welch, tampon eğrisi -> results/deney_raporu.md
 streamlit run app/panel.py       # parametre paneli
@@ -72,6 +72,52 @@ Tam rapor, kullanım tablosu ve grafikler: [results/deney_raporu.md](results/den
 
 30 replikasyonluk ısınmasız koşularda hattaki WIP yaklaşık 130 dakikada, saatlik çıkış yaklaşık 120 dakikada kararlı duruma oturuyor. Kullanılan 500 dk ısınma bunun yaklaşık 4 katı, yani dokümandaki karar güvenli tarafta.
 
+## Halı dokuma salonu ve iş etüdü (`src/hali/`)
+
+Seri hattın yanında ikinci bir model: fabrikanın 14 yüz yüze halı tezgâhını (Schönherr ve
+Van De Wiele; 42/50/70 tarak, 4-5 m, 6-8 renk) ve her tezgâhtaki halfe (dokuma ustası) + telciyi (yardımcısı) birlikte
+simüle eder. Tezgâh durumları (dokuma, personel bekleme, kopuş, top indirme, desen ayarı,
+renk değişimi, çözgü değişimi, arıza) ve personel durumları (müdahale, kontrol, besleme,
+yürüme, gözetim, mola) dakika dakika izlenir; ana ölçüt **m²/vardiya**dır. Devir sabit değil,
+tezgâh başına bir dağılımdır. Renk değişimini çoğunlukla ayrı bir ekip yapar. Mola zamanı
+(herkes aynı anda / ayrı ayrı) ve molada işe kimin baktığı seçilir; yorgunluk (iş süresi son
+moladan beri geçen saatle uzar) ve yeni personel için öğrenme eğrisi (Wright) modeldedir.
+
+Tezgâh bilgileri ve personel düzeni fabrikadan gelir (`FABRİKA`); devir, sıra sıklığı, kopuş,
+süreler ve olasılıklar `VARSAYIM`dır ve iş etüdü ölçümleriyle (`ÖLÇÜM`) değiştirilir.
+Tasarım ve formlar: [docs/hali_tasarim.md](docs/hali_tasarim.md).
+
+```bash
+python -m src.hali.rapor 20                          # H0-H15 senaryoları -> results/hali/rapor.md
+streamlit run app/hali_panel.py                      # halı paneli
+python -m src.hali.is_etudu plan --baslangic 2026-12-01 --gun 10 --tur 3   # rastgele iş örneklemesi turları
+python -m src.hali.is_etudu ornek                    # denemek için sentetik saha verisi (data/hali/ornek_saha)
+python -m src.hali.is_etudu analiz --kayit-saat 120  # formları analiz et, parametreleri güncelle, modeli doğrula
+```
+
+![Halı paneli](docs/hali_panel.png)
+
+Varsayımsal parametrelerle (20 replikasyon × 7 gün), H0'a göre:
+
+| Senaryo | Personel | Salon m²/vardiya | Dokuma oranı | Personel bekleme | Δ % |
+|---|---|---|---|---|---|
+| H0 Temel: tezgâh başına 1 halfe + 1 telci, herkes aynı anda molada | 28 | 2351 ± 9 | %70,9 | %7,7 | - |
+| H1 Ayrı ayrı mola, komşu aynı rol bakar | 28 | 2473 ± 11 | %74,6 | %2,7 | +5,2 |
+| H2 Ayrı ayrı mola, halfe ve telci birbirine bakar | 28 | 2478 ± 10 | %74,7 | %2,5 | +5,4 |
+| H3 Ayrı ayrı mola, yedek personel bakar | 30 | 2461 ± 10 | %74,2 | %3,0 | +4,7 |
+| H4 1 telci / 2 tezgâh | 21 | 2316 ± 10 | %69,8 | %9,1 | −1,5 |
+| H5 1 halfe / 2 tezgâh | 21 | 2285 ± 10 | %68,9 | %10,2 | −2,8 |
+| H6 1 telci / 2 tezgâh + ayrı mola, birbirine bakar | 21 | 2401 ± 11 | %72,4 | %5,6 | +2,1 |
+| H8 Renk değişimi %40 kısa (SMED) | 28 | 2413 ± 8 | %72,7 | %8,0 | +2,6 |
+| H9 Kopuşlar %30 az | 28 | 2460 ± 12 | %74,2 | %6,2 | +4,7 |
+| H12 Telci, halfenin atkı kopuşu ve kontrolüne yardım eder | 28 | 2373 ± 10 | %71,6 | %6,7 | +0,9 |
+| H13 Yorgunluk yok | 28 | 2357 ± 10 | %71,1 | %7,8 | +0,3 |
+| H14 Yorgunluk iki kat (saatte %6) | 28 | 2340 ± 10 | %70,5 | %7,8 | −0,5 |
+| H15 4 yeni halfe (öğrenme eğrisi, 7 gün ortalaması) | 28 | 2290 ± 9 | %68,9 | %8,1 | −2,6 |
+
+Tam tablo, telci/halfe atama eğrileri, yorgunluk ve öğrenme grafikleri ve sanal iş örneklemesi: [results/hali/rapor.md](results/hali/rapor.md).
+Bu sayılar yalnızca yöntemi gösterir; ölçümle güncellenmeden karar için kullanılmamalıdır.
+
 ## Model varsayımları
 
 - **Hat:** 5 istasyon, istasyonlar arasında `simpy.Store(capacity=k)` ara stoklar. İlk istasyonun önünde sınırsız hammadde var.
@@ -119,7 +165,7 @@ Tamamlananlar:
 
 1. **Gerçek veriyle validation:** Staj hattından 100-200 süre ölçümü ve duruş kayıtları alınıp model verimi gerçek verimle karşılaştırılır (hedef: %5-10 fark).
 2. **Tampon dağıtımı optimizasyonu:** Toplam tampon sayısı sabitken en iyi dağılım aranır (simülasyon tabanlı optimizasyon). İlk sürümde kapsam dışıydı.
-3. **Ürün çeşitliliği ve hazırlık süreleri:** Halı dokuma planlama projesiyle bağlantı kurulur.
+3. **Ürün çeşitliliği ve hazırlık süreleri:** Halı dokuma salonu modeli (`src/hali/`) ilk adımı attı; sipariş sıralama ve planlama projesiyle bağlantı kurulabilir.
 4. **OEE projesiyle entegrasyon:** Modelden OEE (kullanılabilirlik × performans × kalite) hesaplanır ve gerçek OEE verisiyle karşılaştırılır.
 
 ## Klasör yapısı
@@ -134,10 +180,12 @@ src/
   analiz.py         # güven aralığı, eşleştirilmiş fark, hareketli ortalama
   kalibrasyon.py    # dağılım uydurma, MTBF/MTTR
   maliyet.py        # yatırım, NBD, geri ödeme, başabaş
-app/panel.py        # Streamlit arayüzü
-tests/              # test_mm1, test_hat, test_deney, test_panel
+  hali/             # halı dokuma salonu: parametre, model, senaryo, is_etudu, rapor
+app/panel.py        # Streamlit arayüzü (seri hat)
+app/hali_panel.py   # Streamlit arayüzü (halı dokuma + iş etüdü)
+tests/              # test_mm1, test_hat, test_deney, test_panel, test_hali, test_hali_panel
 results/            # üretilen tablolar ve grafikler
-data/               # gerçek veri (git'e eklenmez)
+data/               # gerçek veri (git'e eklenmez); data/hali/is_etudu/ form şablonları
 ```
 
 ## Proje özeti (CV ve mülakat için)
