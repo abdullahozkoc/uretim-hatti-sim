@@ -283,28 +283,28 @@
   ],
   "yuz_sayisi": 2,
   "atki_sistemi": 2,
-  "operator_basina_tezgah": 1,
+  "halfe_basina_tezgah": 1,
   "telci_basina_tezgah": 1,
   "is_rolleri": [
     [
       "atki_kopusu",
-      "operator"
+      "halfe"
     ],
     [
       "top_indirme",
-      "operator"
+      "halfe"
     ],
     [
       "ayar",
-      "operator"
+      "halfe"
     ],
     [
       "renk_degisimi",
-      "operator"
+      "halfe"
     ],
     [
       "kontrol",
-      "operator"
+      "halfe"
     ],
     [
       "cozgu_kopusu",
@@ -439,9 +439,21 @@
       15
     ]
   ],
-  "mola_duzeni": "toplu",
+  "mola_zamani": "toplu",
+  "mola_kapsama": "yok",
   "yedek_sayisi": 2,
   "mola_dalga_sayisi": 4,
+  "telci_yardim": false,
+  "yardim_isleri": [
+    "atki_kopusu",
+    "kontrol"
+  ],
+  "yorgunluk_orani": 0.03,
+  "yorgunluk_tavan": 0.25,
+  "yorgunluk_gece_ek": 0.0,
+  "ogrenme_orani": 0.85,
+  "ogrenme_standart_tekrar": 500,
+  "deneyim": [],
   "kisisel_aralik": {
     "tip": "ustel",
     "a": 120,
@@ -466,7 +478,7 @@
       "FABRİKA"
     ],
     [
-      "operator_basina_tezgah",
+      "halfe_basina_tezgah",
       "FABRİKA"
     ],
     [

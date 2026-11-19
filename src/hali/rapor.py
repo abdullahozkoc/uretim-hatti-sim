@@ -18,8 +18,8 @@ from src.analiz import guven_araligi  # noqa: E402
 from src.hali import is_etudu as ie  # noqa: E402
 from src.hali.model import ETIKET, kos  # noqa: E402
 from src.hali.parametre import HaliParam  # noqa: E402
-from src.hali.senaryo import (SENARYOLAR, TABAN_SEED, atama_egrisi, durum_ozeti, karsilastir,  # noqa: E402
-                              senaryolari_kos)
+from src.hali.senaryo import (SENARYOLAR, TABAN_SEED, YENI_PERSONEL, atama_egrisi, durum_ozeti,  # noqa: E402
+                              karsilastir, senaryo_param, senaryolari_kos)
 
 CIKTI = Path(__file__).resolve().parents[2] / "results" / "hali"
 
@@ -71,7 +71,7 @@ def zaman_cizelgesi(sonuc, bas: float, sure: float, yol: Path) -> None:
     c = c[(c["bit"] > bas) & (c["bas"] < bas + sure)].copy()
     c["durum"] = c["durum"].replace({"kisisel": "mola"})
     kaynaklar = []
-    for t, o, tl in zip(sonuc.tezgah["tezgah"], sonuc.personel.query("rol=='operator'")["personel"],
+    for t, o, tl in zip(sonuc.tezgah["tezgah"], sonuc.personel.query("rol=='halfe'")["personel"],
                         sonuc.personel.query("rol=='telci'")["personel"]):
         kaynaklar += [t, o, tl]
     kaynaklar = list(dict.fromkeys(kaynaklar + list(sonuc.tezgah["tezgah"]) + list(sonuc.personel["personel"])))
@@ -84,7 +84,7 @@ def zaman_cizelgesi(sonuc, bas: float, sure: float, yol: Path) -> None:
     ax.invert_yaxis()
     ax.set_xlim(0, sure)
     ax.set_xlabel("Vardiya içi süre (dk)", color="#52514e")
-    ax.set_title("Bir vardiyanın zaman çizelgesi: her tezgâh, operatörü ve telcisi alt alta", loc="left", fontsize=12)
+    ax.set_title("Bir vardiyanın zaman çizelgesi: her tezgâh, halfeyi ve telcisi alt alta", loc="left", fontsize=12)
     _stil(ax)
     eller = [plt.Rectangle((0, 0), 1, 1, color=RENK[d]) for d in dict.fromkeys(TEZGAH_SIRA + PERSONEL_SIRA)]
     ax.legend(eller, [ETIKET_KISA[d] for d in dict.fromkeys(TEZGAH_SIRA + PERSONEL_SIRA)], ncol=5,
@@ -130,7 +130,7 @@ def tezgah_uretim_grafigi(tz: pd.DataFrame, yol: Path) -> None:
 def yakinsama_grafigi(y: pd.DataFrame, yol: Path) -> None:
     fig, ax = plt.subplots(figsize=(7, 3.6))
     for c, renk, ad in (("tezgah_maks_hata", "#2a78d6", "Tezgâh durumları"),
-                        ("operator_maks_hata", "#eb6834", "Operatör durumları"),
+                        ("halfe_maks_hata", "#eb6834", "Halfe durumları"),
                         ("telci_maks_hata", "#1baf7a", "Telci durumları")):
         ax.plot(y["tur"], y[c] * 100, color=renk, lw=2, marker="o", ms=7, mec="white", mew=1.5, label=ad)
     ax.set_xscale("log")
@@ -140,6 +140,78 @@ def yakinsama_grafigi(y: pd.DataFrame, yol: Path) -> None:
     _stil(ax)
     ax.grid(axis="y", color="#ecebe6", lw=0.8)
     ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(yol, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+
+def yorgunluk_egrisi(sonuclar: dict, dilim_dk: int = 30) -> pd.DataFrame:
+    """Vardiya içi zaman dilimine göre ortalama iş süresi çarpanı (yorgunluk)."""
+    satir = []
+    for k, reps in sonuclar.items():
+        i = pd.concat([r.isler for r in reps])
+        vd = reps[0].ozet.get("vardiya_dk", 480)
+        dk = (i["baslama"] % vd) // dilim_dk * dilim_dk
+        g = i.groupby(dk)["yorgunluk"].mean()
+        satir += [{"senaryo": k, "vardiya_dk": int(d), "yorgunluk": v} for d, v in g.items()]
+    return pd.DataFrame(satir)
+
+
+def yorgunluk_grafigi(y: pd.DataFrame, molalar, yol: Path) -> None:
+    fig, ax = plt.subplots(figsize=(8, 3.4))
+    for (k, d), renk in zip(y.groupby("senaryo", sort=False), ("#2a78d6", "#eb6834", "#1baf7a")):
+        ax.step(d["vardiya_dk"] / 60, (d["yorgunluk"] - 1) * 100, where="post", color=renk, lw=2,
+                label=f"{k}: {SENARYOLAR[k][0]}")
+    for bas, sure in molalar:
+        ax.axvspan(bas / 60, (bas + sure) / 60, color="#dcdad5", alpha=0.6, lw=0)
+    ax.set_xlabel("Vardiya saati (gri: toplu mola)")
+    ax.set_ylabel("İş süresi artışı (%)")
+    ax.set_title("Yorgunluk: iş süreleri vardiya içinde nasıl uzuyor", loc="left", fontsize=11)
+    _stil(ax)
+    ax.grid(axis="y", color="#ecebe6", lw=0.8)
+    ax.legend(frameon=False, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.25), ncol=3)
+    fig.tight_layout()
+    fig.savefig(yol, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+
+def ogrenme_egrisi(n: int = 5, gun: int = 14) -> pd.DataFrame:
+    """H0 ve H15 (yeni halfeler) için gün gün salon m²/vardiya ve yeni halfelerin süre çarpanı."""
+    yeni = {a for a, _ in YENI_PERSONEL}
+    satir = []
+    for k in ("H0", "H15"):
+        p = senaryo_param(k, HaliParam(sure_gun=float(gun)))
+        for i in range(n):
+            r = kos(p, TABAN_SEED + i)
+            vu = r.vardiya_uretim.groupby("vardiya")["m2"].sum().reset_index()
+            vu["gun"] = vu["vardiya"] // 3 + 1
+            isl = r.isler[r.isler["personel"].isin(yeni)].copy()
+            isl["gun"] = ((isl["baslama"] - p.isinma_dk) // 1440).astype(int) + 1
+            og = isl.groupby("gun")["ogrenme"].mean()
+            for g, m2 in vu.groupby("gun")["m2"].mean().items():
+                satir.append({"senaryo": k, "rep": i, "gun": int(g), "m2_vardiya": m2,
+                              "yeni_halfe_carpani": og.get(g, 1.0)})
+    d = pd.DataFrame(satir)
+    d = d[(d["gun"] >= 1) & (d["gun"] <= gun)]
+    return d.groupby(["senaryo", "gun"], as_index=False)[["m2_vardiya", "yeni_halfe_carpani"]].mean()
+
+
+def ogrenme_grafigi(o: pd.DataFrame, yol: Path) -> None:
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(10, 3.4))
+    for (k, d), renk in zip(o.groupby("senaryo", sort=False), ("#2a78d6", "#eb6834")):
+        a1.plot(d["gun"], d["m2_vardiya"], color=renk, lw=2, marker="o", ms=5, mec="white",
+                label=f"{k}: {SENARYOLAR[k][0]}")
+    a1.set_title("Salon m²/vardiya (gün ortalaması)", loc="left", fontsize=11)
+    a1.set_xlabel("Gün")
+    a1.legend(frameon=False, fontsize=8)
+    d = o[o["senaryo"] == "H15"]
+    a2.plot(d["gun"], d["yeni_halfe_carpani"], color="#eb6834", lw=2, marker="o", ms=5, mec="white")
+    a2.axhline(1, color="#b5b3ad", lw=1, ls="--")
+    a2.set_title("Yeni halfelerin iş süresi çarpanı", loc="left", fontsize=11)
+    a2.set_xlabel("Gün")
+    for a in (a1, a2):
+        _stil(a)
+        a.grid(axis="y", color="#ecebe6", lw=0.8)
     fig.tight_layout()
     fig.savefig(yol, dpi=130, bbox_inches="tight")
     plt.close(fig)
@@ -157,25 +229,25 @@ def main(n: int = 20) -> None:
     tablo = karsilastir(sonuclar)
     tablo.to_csv(CIKTI / "senaryo_karsilastirma.csv", index=False)
     tz = durum_ozeti(sonuclar, "tz:")
-    op = durum_ozeti(sonuclar, "op:")
+    op = durum_ozeti(sonuclar, "hf:")
     tl = durum_ozeti(sonuclar, "tl:")
     for d in (op, tl):
         d["mola"] = d["mola"] + d.pop("kisisel")
     tz.round(4).to_csv(CIKTI / "tezgah_durumlari.csv")
-    op.round(4).to_csv(CIKTI / "operator_durumlari.csv")
+    op.round(4).to_csv(CIKTI / "halfe_durumlari.csv")
     tl.round(4).to_csv(CIKTI / "telci_durumlari.csv")
     for d in (tz, op, tl):
         d.index = [f"{k}: {SENARYOLAR[k][0]}" for k in d.index]
     yigin_cubuk(tz, TEZGAH_SIRA, "Tezgâh zamanının dağılımı (senaryo ortalaması)", CIKTI / "tezgah_durumlari.png")
-    yigin_cubuk(op, PERSONEL_SIRA, "Operatör zamanının dağılımı", CIKTI / "operator_durumlari.png")
+    yigin_cubuk(op, PERSONEL_SIRA, "Halfe zamanının dağılımı", CIKTI / "halfe_durumlari.png")
     yigin_cubuk(tl, PERSONEL_SIRA, "Telci zamanının dağılımı", CIKTI / "telci_durumlari.png")
 
     eg = atama_egrisi("telci", (1, 2, 3, 4), n=max(5, n // 2))
     eg.round(4).to_csv(CIKTI / "atama_egrisi_telci.csv", index=False)
     atama_grafigi(eg, "Telci", CIKTI / "atama_egrisi_telci.png")
-    ego = atama_egrisi("operator", (1, 2, 3), n=max(5, n // 2))
-    ego.round(4).to_csv(CIKTI / "atama_egrisi_operator.csv", index=False)
-    atama_grafigi(ego, "Operatör", CIKTI / "atama_egrisi_operator.png")
+    ego = atama_egrisi("halfe", (1, 2, 3), n=max(5, n // 2))
+    ego.round(4).to_csv(CIKTI / "atama_egrisi_halfe.csv", index=False)
+    atama_grafigi(ego, "Halfe", CIKTI / "atama_egrisi_halfe.png")
 
     reps = [kos(p, TABAN_SEED + i) for i in range(min(n, 10))]
     tzr = pd.concat([r.tezgah for r in reps]).groupby(["tezgah", "tarak"], sort=False)["m2_vardiya"]
@@ -188,6 +260,14 @@ def main(n: int = 20) -> None:
     yak = ie.yakinsama(ornek, tekrar=30)
     yak.round(4).to_csv(CIKTI / "is_ornekleme_yakinsama.csv", index=False)
     yakinsama_grafigi(yak, CIKTI / "is_ornekleme_yakinsama.png")
+
+    yrep = {k: [kos(senaryo_param(k, p), TABAN_SEED + i) for i in range(min(n, 5))] for k in ("H13", "H0", "H14")}
+    yor = yorgunluk_egrisi(yrep)
+    yor.round(4).to_csv(CIKTI / "yorgunluk_egrisi.csv", index=False)
+    yorgunluk_grafigi(yor, p.molalar, CIKTI / "yorgunluk_egrisi.png")
+    ogr = ogrenme_egrisi(n=min(n, 5))
+    ogr.round(3).to_csv(CIKTI / "ogrenme_egrisi.csv", index=False)
+    ogrenme_grafigi(ogr, CIKTI / "ogrenme_egrisi.png")
 
     p.tablo().to_csv(CIKTI / "parametreler.csv", index=False)
     p.tezgah_tablosu().to_csv(CIKTI / "tezgahlar.csv", index=False)
@@ -213,7 +293,7 @@ def main(n: int = 20) -> None:
 
 ![Tezgâh durumları](tezgah_durumlari.png)
 
-![Operatör durumları](operator_durumlari.png)
+![Halfe durumları](halfe_durumlari.png)
 
 ![Telci durumları](telci_durumlari.png)
 
@@ -227,11 +307,28 @@ Net katkı/vardiya = m²/vardiya × 60 TL − personel × 8 saat × 250 TL (ikis
 
 ![Telci atama eğrisi](atama_egrisi_telci.png)
 
-### Operatör
+### Halfe
 
 {_md(ego.drop(columns=[c for c in ego.columns if c.endswith("_yg")]).round(3))}
 
-![Operatör atama eğrisi](atama_egrisi_operator.png)
+![Halfe atama eğrisi](atama_egrisi_halfe.png)
+
+## Yorgunluk
+
+İş süresi, son moladan (ya da vardiya başından) bu yana geçen her saat için
+%{p.yorgunluk_orani * 100:.0f} uzar, tavan %{p.yorgunluk_tavan * 100:.0f}; molada sıfırlanır (VARSAYIM).
+Ölçmek için: zaman etüdü gözlemlerine vardiya saatini yazın; `zaman_etudu_analiz` saat başına eğimi verir.
+
+![Yorgunluk](yorgunluk_egrisi.png)
+
+## Öğrenme eğrisi (4 yeni halfe, 14 gün)
+
+Yeni halfenin iş süresi Wright eğrisiyle (tekrar / {p.ogrenme_standart_tekrar})^log2({p.ogrenme_orani})
+çarpanı alır; {p.ogrenme_standart_tekrar}. tekrardan sonra standart süreye iner (VARSAYIM).
+
+{_md(ogr.pivot(index="gun", columns="senaryo", values="m2_vardiya").round(0).reset_index())}
+
+![Öğrenme](ogrenme_egrisi.png)
 
 ## Bir vardiyanın zaman çizelgesi (H0, 2. gün ilk vardiya)
 
@@ -239,7 +336,7 @@ Net katkı/vardiya = m²/vardiya × 60 TL − personel × 8 saat × 250 TL (ikis
 
 ## Sanal iş örneklemesi: kaç gözlem turu yeter?
 
-Her turda bütün tezgâhlar, operatörler ve telciler bir kez gözlenir
+Her turda bütün tezgâhlar, halfeler ve telciler bir kez gözlenir
 ({int(yak['gozlem_tur_basina'].iloc[0])} gözlem/tur). Tablo, rastgele zamanlı turlarla tahmin edilen
 oranların gerçek (simülasyondaki) orandan en çok kaç puan saptığını gösterir.
 

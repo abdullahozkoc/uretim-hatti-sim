@@ -1,4 +1,4 @@
-"""Halı dokuma salonu paneli: operatör ve tezgâh durumları, senaryolar, iş etüdü.
+"""Halı dokuma salonu paneli: halfe ve tezgâh durumları, senaryolar, iş etüdü.
 
 Çalıştırma:  streamlit run app/hali_panel.py
 """
@@ -55,6 +55,18 @@ def uzun(df: pd.DataFrame, satir_sutunu: str, sira) -> pd.DataFrame:
     return d.melt(id_vars=satir_sutunu, value_vars=list(sira), var_name="durum", value_name="pay")
 
 
+def _deneyim(mevcut, adet):
+    """Yeni halfe listesi: mevcut ayarı korur, eksikleri H01, H02... sırasıyla tamamlar."""
+    liste = list(mevcut)[:adet]
+    adlar = {a for a, _ in liste}
+    for i in range(1, 15):
+        if len(liste) >= adet:
+            break
+        if f"H{i:02d}" not in adlar:
+            liste.append((f"H{i:02d}", 0))
+    return tuple(liste)
+
+
 # ------------------------------------------------------------------- kenar
 sb = st.sidebar
 sb.title("Parametreler")
@@ -66,15 +78,28 @@ n = sb.slider("Replikasyon sayısı", 3, 40, 8)
 gun = sb.select_slider("Ölçüm süresi (gün)", [1, 3, 5, 7, 14], 3)
 seed = int(sb.number_input("Taban rastgele tohum", 0, 10**6, 7000))
 
-MOLA = ["toplu", "kademeli", "capraz", "yedek"]
+ZAMAN = {"toplu": "Herkes aynı anda", "ayri": "Ayrı ayrı (dalgalar halinde)"}
+KAPSA = {"yok": "Kimse bakmaz", "komsu": "Komşu (aynı rol)", "capraz": "Halfe ↔ telci", "yedek": "Yedek personel"}
 with sb.expander("Personel ve mola", expanded=True):
-    opt = st.slider("Operatör başına tezgâh", 1, 4, taban.operator_basina_tezgah)
+    opt = st.slider("Halfe başına tezgâh", 1, 4, taban.halfe_basina_tezgah)
     tlt = st.slider("Telci başına tezgâh", 1, 4, taban.telci_basina_tezgah)
-    mola = st.selectbox("Mola düzeni", MOLA, MOLA.index(taban.mola_duzeni),
-                        help="toplu: herkes aynı anda · kademeli: aynı roldeki komşu bakar · "
-                             "capraz: aynı tezgâhın operatörü ve telcisi birbirine bakar · yedek: yüzer personel bakar")
+    mola_z = st.radio("Mola zamanı", list(ZAMAN), list(ZAMAN).index(taban.mola_zamani), format_func=ZAMAN.get)
+    mola_k = st.selectbox("Molada işe kim bakar", list(KAPSA), list(KAPSA).index(taban.mola_kapsama),
+                          format_func=KAPSA.get,
+                          help="Herkes aynı anda çıkarsa yalnızca yedek personel bakabilir")
+    yedek = st.slider("Yedek personel", 1, 6, taban.yedek_sayisi) if mola_k == "yedek" else taban.yedek_sayisi
+    yardim = st.checkbox("Telci halfeye yardım eder (atkı kopuşu, kontrol)", taban.telci_yardim)
     kural = st.selectbox("İş seçme kuralı", ["oncelikli", "fifo", "en_yakin"],
                          ["oncelikli", "fifo", "en_yakin"].index(taban.secim_kurali))
+with sb.expander("Yorgunluk ve öğrenme"):
+    yorg = st.slider("Yorgunluk: iş süresi artışı (%/saat, son moladan beri)", 0.0, 10.0,
+                     float(taban.yorgunluk_orani * 100), 0.5) / 100
+    tavan = st.slider("Yorgunluk tavanı (%)", 0, 50, int(taban.yorgunluk_tavan * 100), 5) / 100
+    gece = st.slider("Gece vardiyası ek yorgunluk (%)", 0, 30, int(taban.yorgunluk_gece_ek * 100), 1) / 100
+    yeni = st.slider("Yeni (deneyimsiz) halfe sayısı", 0, 14, len(taban.deneyim))
+    ogr = st.slider("Öğrenme oranı (tekrar 2 katına çıkınca süre çarpanı)", 0.70, 0.95,
+                    float(taban.ogrenme_orani), 0.01)
+    std = st.slider("Standart süreye ulaşılan tekrar sayısı", 50, 2000, int(taban.ogrenme_standart_tekrar), 50)
 with sb.expander("Tezgâh ve kopuşlar"):
     devir_k = st.slider("Devir çarpanı (tüm tezgâhlar)", 0.7, 1.3, 1.0, 0.05,
                         help="Her tezgâhın devir dağılımını ölçekler")
@@ -88,7 +113,10 @@ with sb.expander("Renk değişimi ve bakım"):
     mtbf = st.slider("Arıza aralığı MTBF (dokuma saati)", 5, 200, int(taban.ariza_mtbf_saat), 5)
     tek = st.slider("Teknisyen sayısı", 1, 4, taban.teknisyen_sayisi)
 
-p = replace(taban, operator_basina_tezgah=opt, telci_basina_tezgah=tlt, mola_duzeni=mola, secim_kurali=kural,
+p = replace(taban, halfe_basina_tezgah=opt, telci_basina_tezgah=tlt, mola_zamani=mola_z, mola_kapsama=mola_k,
+            yedek_sayisi=yedek, telci_yardim=yardim, yorgunluk_orani=yorg, yorgunluk_tavan=tavan,
+            yorgunluk_gece_ek=gece, ogrenme_orani=ogr, ogrenme_standart_tekrar=std,
+            deneyim=_deneyim(taban.deneyim, yeni), secim_kurali=kural,
             tezgahlar=tuple(replace(t, devir=t.devir.olcekle(devir_k)) for t in taban.tezgahlar),
             atki_kopus_saat=atki, cozgu_kopus_saat=cozgu, renk_degisim_olasiligi=renk_ol, renk_ekibi=renk_ekip,
             renk_ekip_payi=renk_pay, renk_degisim=taban.renk_degisim.olcekle(renk_k),
@@ -97,8 +125,8 @@ p = replace(taban, operator_basina_tezgah=opt, telci_basina_tezgah=tlt, mola_duz
 # ------------------------------------------------------------------- koşu
 st.title("Halı Dokuma Salonu Simülasyonu")
 olculen = sum(1 for _, r in p.tablo().iterrows() if r["Kaynak"].startswith("ÖLÇÜM"))
-st.caption(f"{hazir}: {SENARYOLAR[hazir][0]} · {p.tezgah_sayisi} tezgâh, {p.kisi_sayisi('operator')} operatör, "
-           f"{p.kisi_sayisi('telci')} telci{f' + {p.yedek_sayisi} yedek' if p.mola_duzeni == 'yedek' else ''} · "
+st.caption(f"{hazir}: {SENARYOLAR[hazir][0]} · {p.tezgah_sayisi} tezgâh, {p.kisi_sayisi('halfe')} halfe, "
+           f"{p.kisi_sayisi('telci')} telci{f' + {p.yedek_sayisi} yedek' if p.mola_kapsama == 'yedek' else ''} · "
            f"{n} replikasyon × {gun} gün · %95 güven aralığı · ölçülmüş parametre: {olculen}")
 if not olculen:
     st.warning("Tezgâh bilgileri fabrikadan; devir, kopuş, süreler ve olasılıklar VARSAYIM. Sayılar yöntemi "
@@ -112,12 +140,13 @@ c = st.columns(5)
 for col, (m, ad, f) in zip(c, (("m2_vardiya", "Salon m²/vardiya", "{:,.0f}"),
                                ("tezgah_verimi", "Tezgâh dokuma oranı", "{:.1%}"),
                                ("girisim", "Personel bekleme (girişim)", "{:.1%}"),
-                               ("operator_doluluk", "Operatör doluluğu", "{:.1%}"),
+                               ("halfe_doluluk", "Halfe doluluğu", "{:.1%}"),
                                ("telci_doluluk", "Telci doluluğu", "{:.1%}"))):
     o, yg = guven_araligi(df[m])
     col.metric(ad, f.format(o), help=f"± {f.format(yg)} (%95 GA)")
 
-sek = st.tabs(["Durumlar", "Zaman çizelgesi", "Senaryo karşılaştırma", "Kişi başına tezgâh", "İş etüdü"])
+sek = st.tabs(["Durumlar", "Zaman çizelgesi", "Senaryo karşılaştırma", "Kişi başına tezgâh", "İş etüdü",
+               "Yorgunluk ve öğrenme"])
 
 # ---------------------------------------------------------------- durumlar
 with sek[0]:
@@ -131,14 +160,14 @@ with sek[0]:
     st.subheader("Tezgâhlar")
     st.altair_chart(yigin(uzun(ornek.tezgah, "tezgah", TEZGAH_SIRA), TEZGAH_SIRA, "tezgah"), width="stretch")
     a, b = st.columns(2)
-    for col, rol, ad in ((a, "operator", "Operatörler"), (b, "telci", "Telciler")):
+    for col, rol, ad in ((a, "halfe", "Halfeler"), (b, "telci", "Telciler")):
         g = ornek.personel[ornek.personel["rol"] == rol]
         col.subheader(ad)
         col.altair_chart(yigin(uzun(g, "personel", PERSONEL_SIRA), PERSONEL_SIRA, "personel"), width="stretch")
     st.caption("İlk replikasyonun kaynak bazında dağılımı. Özet kartları tüm replikasyonların ortalamasıdır.")
     st.subheader("Personel zamanı, iş etüdü sınıflarına göre")
     satir = []
-    for rol, onek in (("Operatör", "op"), ("Telci", "tl")):
+    for rol, onek in (("Halfe", "hf"), ("Telci", "tl")):
         sinif = {}
         for d, s_ in PERSONEL_SINIF.items():
             sinif[s_] = sinif.get(s_, 0) + df[f"{onek}:{d}"].mean()
@@ -161,7 +190,7 @@ with sek[1]:
     cz["Durum"] = cz["durum"].map(ETK)
     sira = list(dict.fromkeys(TEZGAH_SIRA + PERSONEL_SIRA))
     kaynaklar = []
-    ops = list(ornek.personel.query("rol=='operator'")["personel"])
+    ops = list(ornek.personel.query("rol=='halfe'")["personel"])
     tls = list(ornek.personel.query("rol=='telci'")["personel"])
     for i, t in enumerate(ornek.tezgah["tezgah"]):
         kaynaklar += [t] + ([ops[i]] if i < len(ops) else []) + ([tls[i]] if i < len(tls) else [])
@@ -173,7 +202,7 @@ with sek[1]:
                         legend=alt.Legend(orient="bottom", columns=4, title=None, labelLimit=400, symbolLimit=0)),
         tooltip=["kaynak", "Durum", alt.Tooltip("bas:Q", format=".1f"), alt.Tooltip("bit:Q", format=".1f")],
     ).properties(height=alt.Step(22)), width="stretch")
-    st.caption("Turuncu: tezgâh durmuş, operatörü ya da telciyi bekliyor. Mola saatlerinde turuncunun birikmesi "
+    st.caption("Turuncu: tezgâh durmuş, halfeyi ya da telciyi bekliyor. Mola saatlerinde turuncunun birikmesi "
                "mola düzeninin etkisini gösterir.")
 
 # --------------------------------------------------------- karşılaştırma
@@ -189,7 +218,7 @@ with sek[2]:
         tz = pd.DataFrame([{"Senaryo": k, "durum": d, "pay": v[f"tz:{d}"].mean()} for k, v in sonuc.items()
                            for d in TEZGAH_SIRA])
         st.altair_chart(yigin(tz, TEZGAH_SIRA, "Senaryo").properties(title="Tezgâh zamanı"), width="stretch")
-        for onek, baslik in (("op", "Operatör zamanı"), ("tl", "Telci zamanı")):
+        for onek, baslik in (("hf", "Halfe zamanı"), ("tl", "Telci zamanı")):
             opd = []
             for k, v in sonuc.items():
                 for d in PERSONEL_SIRA:
@@ -208,7 +237,7 @@ with sek[3]:
     st.write("Kişi başına tezgâh sayısı arttıkça personel doluluğu artar, tezgâhların personel bekleme kaybı "
              "(makine girişimi) da artar. En iyi nokta, üretim ile işçilik maliyeti arasındaki dengedir.")
     k0, k1, k2 = st.columns(3)
-    rol_sec = k0.selectbox("Rol", ["telci", "operator"])
+    rol_sec = k0.selectbox("Rol", ["telci", "halfe"])
     katki = k1.number_input("m² başına katkı payı (TL, VARSAYIM)", 0.0, 10_000.0, 60.0, 5.0)
     ucret = k2.number_input("Personel maliyeti (TL/saat, VARSAYIM)", 0.0, 10_000.0, 250.0, 10.0)
     if st.button("Eğriyi koş"):
@@ -233,7 +262,7 @@ with sek[4]:
 
     st.subheader("Sanal iş örneklemesi")
     st.write("Gerçek etüde başlamadan önce: rastgele zamanlı gözlem turlarıyla durum oranlarını ne kadar "
-             "doğru tahmin edersiniz? Her turda tüm tezgâhlar, operatörler ve telciler bir kez gözlenir.")
+             "doğru tahmin edersiniz? Her turda tüm tezgâhlar, halfeler ve telciler bir kez gözlenir.")
     tur = st.slider("Gözlem turu sayısı", 10, 1000, 100, 10)
     g = ie.sanal_is_ornekleme(ornek, tur, seed=seed)
     kars = ie.karsilastir(g, ie.gercek_oranlar(ornek))
@@ -268,3 +297,36 @@ with sek[4]:
         saha = pd.read_csv(w)
         st.dataframe(ie.karsilastir(saha, ie.gercek_oranlar(ornek)).round(3), hide_index=True, width="stretch")
         st.caption("Doğrulama: model oranı (gercek) sahadaki güven aralığının içinde mi? 'aralikta' sütunu.")
+
+# ---------------------------------------------------- yorgunluk ve öğrenme
+with sek[5]:
+    isl = ornek.isler.copy()
+    isl["dilim"] = (isl["baslama"] % p.vardiya_dk) // 15 * 15
+    yg = isl.groupby("dilim", as_index=False)["yorgunluk"].mean()
+    yg["artis"] = (yg["yorgunluk"] - 1) * 100
+    st.subheader("Vardiya içinde iş süresi artışı (yorgunluk)")
+    mola_df = pd.DataFrame([{"bas": b, "bit": b + d} for b, d in p.molalar]) if p.mola_zamani == "toplu" else None
+    cizgi = alt.Chart(yg).mark_line(point=True, color=RENK["personel_bekleme"]).encode(
+        x=alt.X("dilim:Q", title="vardiya içi dakika", scale=alt.Scale(domain=[0, p.vardiya_dk])),
+        y=alt.Y("artis:Q", title="iş süresi artışı (%)"),
+        tooltip=[alt.Tooltip("dilim:Q", title="dakika"), alt.Tooltip("artis:Q", format=".1f", title="artış %")])
+    if mola_df is not None:
+        cizgi = alt.Chart(mola_df).mark_rect(color=RENK["mola"], opacity=0.6).encode(x="bas:Q", x2="bit:Q") + cizgi
+    st.altair_chart(cizgi.properties(height=240), width="stretch")
+    st.caption(f"Ortalama yorgunluk çarpanı {df['ort_yorgunluk'].mean():.3f}. Gri bantlar toplu molalar; ayrı "
+               "molada her kişinin molası farklı zamandadır, bu yüzden eğri daha düzdür.")
+    st.subheader("Öğrenme eğrisi")
+    if not p.deneyim:
+        st.info("Yeni (deneyimsiz) halfe yok. Kenar çubuğundaki 'Yeni halfe sayısı' ile ekleyin ya da H15 "
+                "senaryosunu seçin.")
+    else:
+        yeni = [a for a, _ in p.deneyim]
+        y = isl[isl["personel"].isin(yeni)].copy()
+        y["gun"] = ((y["baslama"] - p.isinma_dk) // 1440).astype(int) + 1
+        y = y[y["gun"] >= 1].groupby(["personel", "gun"], as_index=False)["ogrenme"].mean()
+        st.altair_chart(alt.Chart(y).mark_line(point=True).encode(
+            x=alt.X("gun:O", title="gün"), y=alt.Y("ogrenme:Q", title="iş süresi çarpanı (1 = standart)"),
+            color=alt.Color("personel:N", title="Yeni halfe")).properties(height=240), width="stretch")
+        st.caption(f"Wright eğrisi: tekrar iki katına çıkınca süre ×{p.ogrenme_orani:.2f}; "
+                   f"{p.ogrenme_standart_tekrar}. tekrardan sonra standart süre. Ortalama öğrenme çarpanı "
+                   f"{df['ort_ogrenme'].mean():.3f}. Uzun dönemi görmek için ölçüm süresini 14 güne çıkarın.")

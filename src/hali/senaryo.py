@@ -21,15 +21,21 @@ def _olcekle(p: HaliParam, alanlar, k) -> HaliParam:
     return replace(p, **{a: getattr(p, a).olcekle(k) for a in alanlar})
 
 
+YENI_PERSONEL = (("H03", 0), ("H07", 0), ("H11", 0), ("H14", 0))
+
+
 SENARYOLAR: dict[str, tuple[str, Callable[[HaliParam], HaliParam]]] = {
-    "H0": ("Temel: tezgâh başına 1 operatör + 1 telci, toplu mola", lambda p: p),
-    "H1": ("Kademeli mola: komşu aynı rol bakar", lambda p: replace(p, mola_duzeni="kademeli")),
-    "H2": ("Çapraz mola: operatör ve telci birbirine bakar", lambda p: replace(p, mola_duzeni="capraz")),
-    "H3": ("Yedek personelle dalgalı mola (+2 kişi)", lambda p: replace(p, mola_duzeni="yedek")),
+    "H0": ("Temel: tezgâh başına 1 halfe + 1 telci, herkes aynı anda molada", lambda p: p),
+    "H1": ("Ayrı ayrı mola, komşu aynı rol bakar",
+           lambda p: replace(p, mola_zamani="ayri", mola_kapsama="komsu")),
+    "H2": ("Ayrı ayrı mola, halfe ve telci birbirine bakar",
+           lambda p: replace(p, mola_zamani="ayri", mola_kapsama="capraz")),
+    "H3": ("Ayrı ayrı mola, yedek personel bakar (+2 kişi)",
+           lambda p: replace(p, mola_zamani="ayri", mola_kapsama="yedek")),
     "H4": ("1 telci / 2 tezgâh", lambda p: replace(p, telci_basina_tezgah=2)),
-    "H5": ("1 operatör / 2 tezgâh", lambda p: replace(p, operator_basina_tezgah=2)),
-    "H6": ("1 telci / 2 tezgâh + çapraz mola",
-           lambda p: replace(p, telci_basina_tezgah=2, mola_duzeni="capraz")),
+    "H5": ("1 halfe / 2 tezgâh", lambda p: replace(p, halfe_basina_tezgah=2)),
+    "H6": ("1 telci / 2 tezgâh + ayrı mola, birbirine bakar",
+           lambda p: replace(p, telci_basina_tezgah=2, mola_zamani="ayri", mola_kapsama="capraz")),
     "H7": ("Renk ekibi 2'ye çıkar", lambda p: replace(p, renk_ekibi=p.renk_ekibi + 1)),
     "H8": ("SMED: renk değişimi %40 kısa", lambda p: _olcekle(p, ("renk_degisim",), 0.6)),
     "H9": ("İplik kalitesi: kopuşlar %30 az",
@@ -38,6 +44,10 @@ SENARYOLAR: dict[str, tuple[str, Callable[[HaliParam], HaliParam]]] = {
     "H11": ("Devir +%10 (kopuş +%20)",
             lambda p: replace(p, tezgahlar=tuple(replace(t, devir=t.devir.olcekle(1.1)) for t in p.tezgahlar),
                               atki_kopus_saat=p.atki_kopus_saat * 1.2, cozgu_kopus_saat=p.cozgu_kopus_saat * 1.2)),
+    "H12": ("Telci, halfenin atkı kopuşu ve kontrolüne yardım eder", lambda p: replace(p, telci_yardim=True)),
+    "H13": ("Yorgunluk yok (karşılaştırma için)", lambda p: replace(p, yorgunluk_orani=0.0)),
+    "H14": ("Yorgunluk iki kat (saatte %6)", lambda p: replace(p, yorgunluk_orani=p.yorgunluk_orani * 2)),
+    "H15": ("4 yeni halfe işe başlar (öğrenme eğrisi)", lambda p: replace(p, deneyim=YENI_PERSONEL)),
 }
 
 METRIKLER = {
@@ -45,7 +55,8 @@ METRIKLER = {
     "m2_vardiya_tezgah": ("Tezgâh başına m²/vardiya", 1),
     "tezgah_verimi": ("Dokuma oranı", 3),
     "girisim": ("Personel bekleme oranı", 3),
-    "operator_doluluk": ("Operatör doluluğu", 3),
+    "halfe_doluluk": ("Halfe doluluğu", 3),
+    "ort_yorgunluk": ("Ort. yorgunluk çarpanı", 3),
     "telci_doluluk": ("Telci doluluğu", 3),
     "m2_personel_saat": ("m² / personel-saat", 1),
 }
@@ -99,7 +110,7 @@ def karsilastir(sonuclar: dict[str, pd.DataFrame], referans: str = "H0") -> pd.D
 
 
 def durum_ozeti(sonuclar: dict[str, pd.DataFrame], onek: str) -> pd.DataFrame:
-    """Senaryo × durum oran tablosu (onek: 'tz:' tezgâh, 'op:' operatör)."""
+    """Senaryo × durum oran tablosu (onek: 'tz:' tezgâh, 'hf:' halfe)."""
     return pd.DataFrame({k: {c[len(onek):]: df[c].mean() for c in df.columns if c.startswith(onek)}
                          for k, df in sonuclar.items()}).T
 
@@ -109,11 +120,11 @@ def atama_egrisi(rol: str = "telci", tezgah_sayilari=(1, 2, 3, 4), n: int = 10, 
                  paralel: bool = True, taban_seed: int = TABAN_SEED) -> pd.DataFrame:
     """Kişi başına tezgâh sayısına göre üretim, girişim ve vardiya başına net katkı.
 
-    rol: "operator" ya da "telci". katki_tl_m2 ve personel_tl_saat VARSAYIM'dır.
+    rol: "halfe" ya da "telci". katki_tl_m2 ve personel_tl_saat VARSAYIM'dır.
     Net katkı/vardiya = m²/vardiya × katkı payı − personel sayısı × vardiya saati × saat maliyeti.
     """
     temel = temel or HaliParam()
-    alan = "operator_basina_tezgah" if rol == "operator" else "telci_basina_tezgah"
+    alan = "halfe_basina_tezgah" if rol == "halfe" else "telci_basina_tezgah"
     satirlar = []
     for m in tezgah_sayilari:
         p = replace(temel, **{alan: m})

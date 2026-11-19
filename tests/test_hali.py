@@ -19,7 +19,7 @@ def test_fabrika_tezgahlari():
     assert (t[0].marka, t[0].tarak, t[0].en_m, t[0].renk, t[0].tarak_sayisi) == ("Schönherr", 42, 5.0, 8, 2100)
     assert t[10].tarak == 70 and t[10].tarak_sayisi == 2800
     p = HaliParam()
-    assert p.kisi_sayisi("operator") == 14 and p.kisi_sayisi("telci") == 14
+    assert p.kisi_sayisi("halfe") == 14 and p.kisi_sayisi("telci") == 14
 
 
 def test_ayni_tohum_ayni_sonuc():
@@ -58,7 +58,7 @@ def test_devir_degiskendir():
 def test_toplu_molada_mola_payi_takvime_uyar():
     r = kos(KISA, 2)
     planli = sum(s for _, s in KISA.molalar) / KISA.vardiya_dk
-    assert r.ozet["op:mola"] == pytest.approx(planli, abs=0.01)
+    assert r.ozet["hf:mola"] == pytest.approx(planli, abs=0.01)
     assert r.ozet["tl:mola"] == pytest.approx(planli, abs=0.01)
 
 
@@ -66,7 +66,7 @@ def test_roller_isleri_ayirir():
     r = kos(KISA, 5)
     isl = r.isler
     assert set(isl[isl["tur"] == "cozgu_kopusu"]["personel_rol"]) == {"telci"}
-    assert set(isl[isl["tur"] == "top_indirme"]["personel_rol"]) == {"operator"}
+    assert set(isl[isl["tur"] == "top_indirme"]["personel_rol"]) == {"halfe"}
     assert r.ozet["tz:renk_degisimi"] > 0
 
 
@@ -78,16 +78,67 @@ def test_daha_az_telci_daha_fazla_girisim():
     assert cok["telci_sayisi"] == 5
 
 
-def test_mola_duzenleri_girisimi_azaltir():
-    o = {d: replikasyon(replace(KISA, mola_duzeni=d), 3).mean() for d in ("toplu", "kademeli", "capraz", "yedek")}
-    for d in ("kademeli", "capraz", "yedek"):
-        assert o[d]["girisim"] < o["toplu"]["girisim"]
+def test_mola_secenekleri_girisimi_azaltir():
+    duzen = {"toplu": ("toplu", "yok"), "komsu": ("ayri", "komsu"),
+             "capraz": ("ayri", "capraz"), "yedek": ("ayri", "yedek")}
+    o = {k: replikasyon(replace(KISA, mola_zamani=z, mola_kapsama=c), 3).mean() for k, (z, c) in duzen.items()}
+    for k in ("komsu", "capraz", "yedek"):
+        assert o[k]["girisim"] < o["toplu"]["girisim"]
     assert o["yedek"]["personel_sayisi"] == 30
+
+
+def test_ayri_mola_kapsamasiz_da_calisir():
+    r = kos(replace(KISA, mola_zamani="ayri", mola_kapsama="yok"), 1)
+    assert r.ozet["m2_vardiya"] > 0
+    assert r.ozet["hf:mola"] > 0
+
+
+def test_yorgunluk_vardiya_icinde_artar_molada_sifirlanir():
+    r = kos(replace(KISA, yorgunluk_orani=0.05, yorgunluk_tavan=0.5), 1)
+    i = r.isler
+    assert i["yorgunluk"].min() >= 1.0
+    dk = i["baslama"] % KISA.vardiya_dk
+    assert i[dk > 90]["yorgunluk"].mean() > i[dk < 30]["yorgunluk"].mean()
+    # ilk mola 120. dk'da (15 dk): hemen sonrasındaki işler hemen öncekilerden az yorgun
+    once = i[(dk > 95) & (dk < 120)]["yorgunluk"].mean()
+    sonra = i[(dk > 140) & (dk < 160)]["yorgunluk"].mean()
+    assert sonra < once
+    yok = kos(replace(KISA, yorgunluk_orani=0.0), 1)
+    assert (yok.isler["yorgunluk"] == 1.0).all()
+
+
+def test_yorgunluk_uretimi_dusurur():
+    az = replikasyon(replace(KISA, yorgunluk_orani=0.0), 4).mean()
+    cok = replikasyon(replace(KISA, yorgunluk_orani=0.10, yorgunluk_tavan=0.6), 4).mean()
+    assert cok["m2_vardiya"] < az["m2_vardiya"]
+
+
+def test_ogrenme_egrisi_yeni_halfede_azalir():
+    r = kos(replace(KISA, deneyim=(("H01", 0),)), 1)
+    i = r.isler
+    yeni = i[i["personel"] == "H01"].sort_values("baslama")
+    eski = i[i["personel"] == "H02"]
+    assert (eski["ogrenme"] == 1.0).all()
+    assert yeni["ogrenme"].iloc[0] > 1.0
+    assert yeni["ogrenme"].iloc[-1] < yeni["ogrenme"].iloc[0]
+    deneyimli = kos(replace(KISA, deneyim=(("H01", 10_000),)), 1)
+    assert (deneyimli.isler["ogrenme"] == 1.0).all()
+
+
+def test_telci_yardimi_halfe_isini_alir():
+    r = kos(replace(KISA, telci_yardim=True), 1)
+    i = r.isler
+    tl_atki = i[(i["personel"].str.startswith("TL")) & (i["tur"] == "atki_kopusu")]
+    assert len(tl_atki) > 0
+    kapali = kos(KISA, 1).isler
+    assert len(kapali[(kapali["personel"].str.startswith("TL")) & (kapali["tur"] == "atki_kopusu")]) == 0
 
 
 def test_gecersiz_secenekler_reddedilir():
     with pytest.raises(ValueError):
-        kos(replace(KISA, mola_duzeni="yok"), 1)
+        kos(replace(KISA, mola_zamani="yok"), 1)
+    with pytest.raises(ValueError):
+        kos(replace(KISA, mola_kapsama="kademeli"), 1)
     with pytest.raises(ValueError):
         kos(replace(KISA, secim_kurali="rastgele"), 1)
 
@@ -124,7 +175,7 @@ def test_standart_sure_ve_gerekli_gozlem():
 def test_sanal_is_ornekleme_gercege_yakinsar():
     r = kos(KISA, 1)
     g = ie.sanal_is_ornekleme(r, 600, seed=3)
-    assert set(g["kaynak_tipi"]) == {"tezgah", "operator", "telci"}
+    assert set(g["kaynak_tipi"]) == {"tezgah", "halfe", "telci"}
     k = ie.karsilastir(g, ie.gercek_oranlar(r))
     assert (k["oran"] - k["gercek"]).abs().max() < 0.05
     assert k["aralikta"].mean() >= 0.75
@@ -148,7 +199,7 @@ def test_olcumler_parametreye_yazilir():
     assert ka.loc[0, "saat_basina"] == pytest.approx(2.0)
     devir = pd.DataFrame({"tezgah": "T05", "devir": rng.normal(80, 4, 40)})
     renk = pd.DataFrame({"durus_dk": [0, 100], "ekip_gelis_dk": [10, 0], "bitis_dk": [90, 180],
-                         "yapan": ["ekip", "operator"]})
+                         "yapan": ["ekip", "halfe"]})
     p = ie.parametreleri_guncelle(HaliParam(), zaman=tablo, kopus=ka, devir=ie.devir_analiz(devir),
                                   renk=ie.renk_analiz(renk))
     assert p.atki_kopus_saat == pytest.approx(2.0)
@@ -178,3 +229,24 @@ def test_form_sablonlari_okunur():
     o = pd.read_csv(kok / "is_ornekleme.csv")
     assert set(o["durum"]) <= set(PERSONEL_DURUMLARI) | set(TEZGAH_DURUMLARI)
     assert set(o["kaynak_tipi"]) <= set(ie.KAYNAK_TIPLERI)
+
+
+def test_yorgunluk_ve_ogrenme_analizi_parametreyi_geri_bulur():
+    from src.hali.is_etudu import ogrenme_analiz, parametreleri_guncelle, yorgunluk_analiz
+    rng = np.random.default_rng(1)
+    h = rng.uniform(0, 120, 400)
+    z = pd.DataFrame({"model_alani": "atki_mudahale", "personel": "H01", "performans": 100,
+                      "sure_dk": 2.0 * (1 + 0.05 * h / 60) * rng.normal(1, 0.03, 400), "mola_sonrasi_dk": h,
+                      "tekrar": ""})
+    n = np.arange(1, 201)
+    yeni = pd.DataFrame({"model_alani": "atki_mudahale", "personel": "H09", "performans": 100,
+                         "sure_dk": 2.0 * np.maximum(1, (n / 300) ** np.log2(0.8)) * rng.normal(1, 0.02, 200),
+                         "mola_sonrasi_dk": "", "tekrar": n})
+    y = yorgunluk_analiz(z)
+    assert y["anlamli"] and abs(y["yorgunluk_orani"] - 0.05) < 0.01
+    o = ogrenme_analiz(pd.concat([z, yeni]))
+    assert abs(o["ogrenme_orani"] - 0.8) < 0.03
+    assert 200 < o["standart_tekrar"] < 450
+    p = parametreleri_guncelle(HaliParam(), yorgunluk=y, ogrenme=o)
+    assert p.kaynak("yorgunluk_orani").startswith("ÖLÇÜM")
+    assert p.ogrenme_orani == pytest.approx(o["ogrenme_orani"])

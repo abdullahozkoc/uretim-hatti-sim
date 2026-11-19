@@ -1,26 +1,32 @@
-"""Halı dokuma salonu: tezgâhlar, operatörler, telciler, renk ekibi, teknisyen ve çözgü ekibi (SimPy).
+"""Halı dokuma salonu: tezgâhlar, halfeler, telciler, renk ekibi, teknisyen ve çözgü ekibi (SimPy).
 
 Akış
 ----
 Her tezgâh kendi kalitesinde (tarak, sıra sıklığı, en) sırayla halı topu dokur.
 Devir değişkendir: her yeni topta tezgâhın devir dağılımından çekilir.
 Dokuma sırasında dört olay yarışır: atkı kopuşu, çözgü/hav kopuşu, mekanik arıza
-besleme ve halı kontrolü ihtiyacı (bu ikisi tezgâhı durdurmaz). Top bitince operatör topu indirir.
+besleme ve halı kontrolü ihtiyacı (bu ikisi tezgâhı durdurmaz). Top bitince halfe topu indirir.
 Sonraki top renk değişimi gerektiriyorsa bunu çoğunlukla renk ekibi, kalan durumda
-operatör yapar; yalnızca desen değişiyorsa operatör kısa bir ayar yapar. Çözgü
+halfe yapar; yalnızca desen değişiyorsa halfe kısa bir ayar yapar. Çözgü
 bitince çözgü ekibi, arıza olunca teknisyen gelir.
 
 Durduran bir işi bekleyen tezgâh "personel_bekleme" durumundadır: bu süre iş
 etüdündeki makine girişimi (machine interference) kaybıdır.
 
-Personel: her işin bir rolü vardır (operatör ya da telci, `is_rolleri`). Kişi,
+Personel: her işin bir rolü vardır (halfe ya da telci, `is_rolleri`). Kişi,
 sorumlu olduğu (tezgâh, rol) çiftlerindeki işlerden seçim kuralına göre iş alır,
 yürür ve işi yapar; iş yoksa gözetimdedir. Mola ve kişisel ihtiyaç iş aralarında
-kullanılır. Mola düzenleri:
-  toplu    : herkes aynı anda; molada işlerine kimse bakmaz
-  kademeli : aynı roldeki komşu iki kişi sırayla çıkar, biri diğerine bakar
-  capraz   : aynı tezgâhın operatörü ve telcisi sırayla çıkar, birbirine bakar
-  yedek    : personel dalgalar halinde çıkar, yüzer yedek personel bakar
+kullanılır. Mola iki seçimle tanımlanır:
+  mola_zamani  : toplu (herkes aynı anda çıkar) | ayri (dalgalar halinde ayrı ayrı)
+  mola_kapsama : molada çıkanın işine kim bakar
+                 yok    : kimse (tezgâh bekler)
+                 komsu  : aynı roldeki komşu kişi
+                 capraz : aynı tezgâhın halfesi/telcisi birbirine bakar
+                 yedek  : yüzer yedek personel
+Yorgunluk: iş süresi, son moladan bu yana geçen saatle doğrusal uzar
+(yorgunluk_orani, tavan yorgunluk_tavan; molada sıfırlanır).
+Öğrenme: deneyimsiz kişide iş süresi Wright eğrisiyle (n/standart)^log2(oran)
+çarpanı alır; tekrar sayısı arttıkça 1'e iner.
 """
 from __future__ import annotations
 
@@ -53,7 +59,7 @@ PERSONEL_SINIF = {
     "kisisel": "Mola ve kişisel",
 }
 OPERATOR_SINIF = PERSONEL_SINIF
-ROL_ONEK = {"operator": "op", "telci": "tl", "yedek": "yd"}
+ROL_ONEK = {"halfe": "hf", "telci": "tl", "yedek": "yd"}
 
 
 class Kaydedici:
@@ -250,7 +256,7 @@ class _Personel:
         self.s, self.rol, self.k = salon, rol, k
         p, env = salon.p, salon.env
         self.yedek = rol == "yedek"
-        self.ad = {"operator": "O", "telci": "TL", "yedek": "Y"}[rol] + f"{k + 1:02d}"
+        self.ad = {"halfe": "H", "telci": "TL", "yedek": "Y"}[rol] + f"{k + 1:02d}"
         self.tezgahlar = list(tezgahlar)
         self.isler = {(i, rol) for i in tezgahlar}
         self.konum = float(np.mean(tezgahlar)) if tezgahlar else (p.tezgah_sayisi - 1) / 2
@@ -262,10 +268,33 @@ class _Personel:
         self.bosta = False
         self._uyari = env.event()
         self.is_sayisi = 0
+        self.son_dinlenme = 0.0                       # son mola ya da vardiya başı
+        d = dict(p.deneyim)
+        self.deneyimli = self.ad not in d
+        self.tekrar: dict[str, int] = {}
+        self.baslangic_tekrar = int(d.get(self.ad, 0))
         env.process(self.calis())
         if not self.yedek:
             env.process(self.mola_takvimi())
             env.process(self.kisisel_ihtiyac())
+
+    def yorgunluk_carpani(self) -> float:
+        p, now = self.s.p, self.s.env.now
+        vardiya_bas = (now // p.vardiya_dk) * p.vardiya_dk
+        saat = (now - max(self.son_dinlenme, vardiya_bas)) / 60
+        f = min(p.yorgunluk_orani * saat, p.yorgunluk_tavan)
+        if p.yorgunluk_gece_ek and int(now // p.vardiya_dk) % 3 == 2:
+            f += p.yorgunluk_gece_ek
+        return 1.0 + max(0.0, f)
+
+    def ogrenme_carpani(self, tur: str) -> float:
+        """Wright öğrenme eğrisi; deneyimli personelde 1."""
+        if self.deneyimli:
+            return 1.0
+        p = self.s.p
+        n = self.baslangic_tekrar + self.tekrar.get(tur, 0) + 1
+        b = np.log2(p.ogrenme_orani)
+        return max(1.0, (n / p.ogrenme_standart_tekrar) ** b)
 
     def uyandir(self) -> None:
         if self.bosta and not self._uyari.triggered:
@@ -279,17 +308,13 @@ class _Personel:
         return kume
 
     def mola_ofseti(self, sure: float) -> float:
+        """Ayrı ayrı molada kişiler dalgalara bölünür; aynı tezgâhın halfesi ile telcisi farklı dalgadadır."""
         p = self.s.p
-        d = p.mola_duzeni
-        if d == "kademeli":
-            return sure if self.k % 2 else 0.0
-        if d == "capraz":
-            return sure if self.rol == "telci" else 0.0
-        if d == "yedek":
-            dalga = p.mola_dalga_sayisi
-            kaydir = dalga // 2 if self.rol == "telci" else 0
-            return ((self.k + kaydir) % dalga) * sure
-        return 0.0
+        if p.mola_zamani != "ayri":
+            return 0.0
+        dalga = max(2, p.mola_dalga_sayisi)
+        kaydir = dalga // 2 if self.rol == "telci" else 0
+        return ((self.k + kaydir) % dalga) * sure
 
     def mola_takvimi(self):
         p, env = self.s.p, self.s.env
@@ -325,6 +350,7 @@ class _Personel:
                     k.uyandir()
                 yield env.timeout(sure)
                 self.molada = False
+                self.son_dinlenme = env.now
                 continue
             if self.kisisel_bekliyor:
                 self.kisisel_bekliyor -= 1
@@ -346,20 +372,24 @@ class _Personel:
                 yield env.timeout(p.yurume_sabit + mesafe * p.yurume_tezgah_arasi)
                 self.konum = is_.tezgah.konum
             is_.personel, is_.baslama_t = self.ad, env.now
+            yorgunluk, ogrenme = self.yorgunluk_carpani(), self.ogrenme_carpani(is_.tur)
             is_.basladi.succeed()
             self.kayit.durum(is_.tur)
-            yield env.timeout(is_.sure)
+            yield env.timeout(is_.sure * yorgunluk * ogrenme)
             is_.bitti.succeed()
+            self.tekrar[is_.tur] = self.tekrar.get(is_.tur, 0) + 1
             if env.now >= p.isinma_dk:
                 self.is_sayisi += 1
                 s.isler.append((is_.tezgah.ad, is_.tur, is_.rol, is_.talep_t, is_.baslama_t, env.now,
-                                self.ad, self.rol, is_.durdurur))
+                                self.ad, self.rol, is_.durdurur, yorgunluk, ogrenme))
 
 
 class _Salon:
     def __init__(self, p: HaliParam, seed: int):
-        if p.mola_duzeni not in ("toplu", "kademeli", "capraz", "yedek"):
-            raise ValueError("mola_duzeni: toplu | kademeli | capraz | yedek")
+        if p.mola_zamani not in ("toplu", "ayri"):
+            raise ValueError("mola_zamani: toplu | ayri")
+        if p.mola_kapsama not in ("yok", "komsu", "capraz", "yedek"):
+            raise ValueError("mola_kapsama: yok | komsu | capraz | yedek")
         if p.secim_kurali not in ("fifo", "en_yakin", "oncelikli"):
             raise ValueError("secim_kurali: fifo | en_yakin | oncelikli")
         if set(dict(p.is_rolleri).values()) - set(ROLLER):
@@ -376,44 +406,50 @@ class _Salon:
         self.personel: list[_Personel] = []
         self.rol_listesi: dict[str, list[_Personel]] = {}
         for rol in ROLLER:
-            m = p.operator_basina_tezgah if rol == "operator" else p.telci_basina_tezgah
+            m = p.halfe_basina_tezgah if rol == "halfe" else p.telci_basina_tezgah
             kisiler = [_Personel(self, rol, k, list(range(k * m, min(n, (k + 1) * m))))
                        for k in range(p.kisi_sayisi(rol))]
             self.rol_listesi[rol] = kisiler
             self.personel += kisiler
         self.yedekler = [_Personel(self, "yedek", k, []) for k in range(p.yedek_sayisi)] \
-            if p.mola_duzeni == "yedek" else []
+            if p.mola_kapsama == "yedek" else []
         self.personel += self.yedekler
         self._kapsama = {o: self._kapsayanlari_bul(o) for o in self.personel}
         self.tezgahlar = [_Tezgah(self, i) for i in range(n)]
 
     def _kapsayanlari_bul(self, o: _Personel) -> list[_Personel]:
-        d = self.p.mola_duzeni
-        if o.yedek or d == "toplu":
+        d = self.p.mola_kapsama
+        if o.yedek or d == "yok":
             return []
         if d == "yedek":
             return list(self.yedekler)
-        if d == "kademeli":
+        if d == "komsu":
             liste = self.rol_listesi[o.rol]
-            k = o.k + 1 if o.k % 2 == 0 and o.k + 1 < len(liste) else o.k - 1
-            return [liste[k]] if 0 <= k < len(liste) and k != o.k else []
-        diger = "telci" if o.rol == "operator" else "operator"       # capraz
+            return [x for x in (liste[o.k - 1] if o.k > 0 else None, liste[o.k + 1] if o.k + 1 < len(liste) else None)
+                    if x is not None]
+        diger = "telci" if o.rol == "halfe" else "halfe"       # capraz
         ilk = o.tezgahlar[0]
         return [x for x in self.rol_listesi[diger] if ilk in x.tezgahlar][:1]
 
     def kapsayanlar(self, o: _Personel) -> list[_Personel]:
         return self._kapsama[o]
 
+    def _alabilir(self, o: _Personel, t: Is, kume: set) -> bool:
+        if (t.tezgah.i, t.rol) in kume:
+            return True
+        p = self.p
+        return (p.telci_yardim and o.rol == "telci" and t.rol == "halfe" and t.tur in p.yardim_isleri
+                and (t.tezgah.i, "telci") in kume)
+
     def talep_ekle(self, is_: Is) -> None:
         self.talepler.append(is_)
-        anahtar = (is_.tezgah.i, is_.rol)
         for o in self.personel:
-            if o.bosta and anahtar in o.sorumlu():
+            if o.bosta and self._alabilir(o, is_, o.sorumlu()):
                 o.uyandir()
 
     def is_sec(self, o: _Personel) -> Is | None:
         kume = o.sorumlu()
-        aday = [t for t in self.talepler if (t.tezgah.i, t.rol) in kume]
+        aday = [t for t in self.talepler if self._alabilir(o, t, kume)]
         if not aday:
             return None
         kural = self.p.secim_kurali
@@ -463,7 +499,8 @@ def kos(p: HaliParam, seed: int) -> HaliSonuc:
                    "is_sayisi": o.is_sayisi, "tezgah_sayisi": len(o.tezgahlar)})
     pr = pd.DataFrame(pr)
     isler = pd.DataFrame(s.isler, columns=["tezgah", "tur", "rol", "talep", "baslama", "bitis", "personel",
-                                           "personel_rol", "durdurur"])
+                                           "personel_rol", "durdurur", "yorgunluk", "ogrenme"])
+    isler["vardiya_saati"] = ((isler["baslama"] % p.vardiya_dk) // 60).astype(int) + 1
     isler["bekleme"] = isler["baslama"] - isler["talep"]
     durduran = isler[isler["durdurur"]]
     toplam_m2 = float(tz["m2"].sum())
@@ -479,8 +516,10 @@ def kos(p: HaliParam, seed: int) -> HaliSonuc:
         "ort_bekleme_dk": float(durduran["bekleme"].mean()) if len(durduran) else 0.0,
         "kopus_dokuma_saati": float(tz["kopus"].sum() / dokuma_saat) if dokuma_saat else 0.0,
         "top_vardiya": float(tz["top"].sum() / vardiya_sayisi),
+        "ort_yorgunluk": float(isler["yorgunluk"].mean()) if len(isler) else 1.0,
+        "ort_ogrenme": float(isler["ogrenme"].mean()) if len(isler) else 1.0,
         "personel_sayisi": len(pr),
-        "operator_sayisi": int((pr["rol"] == "operator").sum()),
+        "halfe_sayisi": int((pr["rol"] == "halfe").sum()),
         "telci_sayisi": int((pr["rol"] == "telci").sum()),
     }
     for rol, onek in ROL_ONEK.items():

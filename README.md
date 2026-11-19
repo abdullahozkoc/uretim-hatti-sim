@@ -11,7 +11,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-pytest                           # 51 test, ~2 dk
+pytest                           # 57 test, ~2 dk
 python -m src.mm1_dogrulama      # M/M/1 doğrulama tablosu  -> results/mm1_dogrulama.md
 python -m src.deney              # senaryolar, Welch, tampon eğrisi -> results/deney_raporu.md
 streamlit run app/panel.py       # parametre paneli
@@ -75,18 +75,20 @@ Tam rapor, kullanım tablosu ve grafikler: [results/deney_raporu.md](results/den
 ## Halı dokuma salonu ve iş etüdü (`src/hali/`)
 
 Seri hattın yanında ikinci bir model: fabrikanın 14 yüz yüze halı tezgâhını (Schönherr ve
-Van De Wiele; 42/50/70 tarak, 4-5 m, 6-8 renk) ve her tezgâhtaki operatör + telciyi birlikte
+Van De Wiele; 42/50/70 tarak, 4-5 m, 6-8 renk) ve her tezgâhtaki halfe (dokuma ustası) + telciyi (yardımcısı) birlikte
 simüle eder. Tezgâh durumları (dokuma, personel bekleme, kopuş, top indirme, desen ayarı,
 renk değişimi, çözgü değişimi, arıza) ve personel durumları (müdahale, kontrol, besleme,
 yürüme, gözetim, mola) dakika dakika izlenir; ana ölçüt **m²/vardiya**dır. Devir sabit değil,
-tezgâh başına bir dağılımdır. Renk değişimini çoğunlukla ayrı bir ekip yapar.
+tezgâh başına bir dağılımdır. Renk değişimini çoğunlukla ayrı bir ekip yapar. Mola zamanı
+(herkes aynı anda / ayrı ayrı) ve molada işe kimin baktığı seçilir; yorgunluk (iş süresi son
+moladan beri geçen saatle uzar) ve yeni personel için öğrenme eğrisi (Wright) modeldedir.
 
 Tezgâh bilgileri ve personel düzeni fabrikadan gelir (`FABRİKA`); devir, sıra sıklığı, kopuş,
 süreler ve olasılıklar `VARSAYIM`dır ve iş etüdü ölçümleriyle (`ÖLÇÜM`) değiştirilir.
 Tasarım ve formlar: [docs/hali_tasarim.md](docs/hali_tasarim.md).
 
 ```bash
-python -m src.hali.rapor 20                          # H0-H11 senaryoları -> results/hali/rapor.md
+python -m src.hali.rapor 20                          # H0-H15 senaryoları -> results/hali/rapor.md
 streamlit run app/hali_panel.py                      # halı paneli
 python -m src.hali.is_etudu plan --baslangic 2026-12-01 --gun 10 --tur 3   # rastgele iş örneklemesi turları
 python -m src.hali.is_etudu ornek                    # denemek için sentetik saha verisi (data/hali/ornek_saha)
@@ -99,17 +101,21 @@ Varsayımsal parametrelerle (20 replikasyon × 7 gün), H0'a göre:
 
 | Senaryo | Personel | Salon m²/vardiya | Dokuma oranı | Personel bekleme | Δ % |
 |---|---|---|---|---|---|
-| H0 Temel: tezgâh başına 1 operatör + 1 telci, toplu mola | 28 | 2357 ± 10 | %71,1 | %7,8 | - |
-| H1 Kademeli mola (komşu aynı rol bakar) | 28 | 2472 ± 10 | %74,5 | %3,0 | +4,9 |
-| H2 Çapraz mola (operatör ve telci birbirine bakar) | 28 | 2489 ± 11 | %75,1 | %2,6 | +5,6 |
-| H3 Yedek personelle dalgalı mola | 30 | 2478 ± 10 | %74,7 | %2,8 | +5,1 |
-| H4 1 telci / 2 tezgâh | 21 | 2326 ± 10 | %70,1 | %9,0 | −1,3 |
-| H5 1 operatör / 2 tezgâh | 21 | 2298 ± 10 | %69,3 | %10,1 | −2,5 |
-| H6 1 telci / 2 tezgâh + çapraz mola | 21 | 2441 ± 9 | %73,6 | %4,3 | +3,6 |
-| H8 Renk değişimi %40 kısa (SMED) | 28 | 2424 ± 9 | %73,0 | %7,9 | +2,8 |
-| H9 Kopuşlar %30 az | 28 | 2467 ± 13 | %74,4 | %6,1 | +4,6 |
+| H0 Temel: tezgâh başına 1 halfe + 1 telci, herkes aynı anda molada | 28 | 2351 ± 9 | %70,9 | %7,7 | - |
+| H1 Ayrı ayrı mola, komşu aynı rol bakar | 28 | 2473 ± 11 | %74,6 | %2,7 | +5,2 |
+| H2 Ayrı ayrı mola, halfe ve telci birbirine bakar | 28 | 2478 ± 10 | %74,7 | %2,5 | +5,4 |
+| H3 Ayrı ayrı mola, yedek personel bakar | 30 | 2461 ± 10 | %74,2 | %3,0 | +4,7 |
+| H4 1 telci / 2 tezgâh | 21 | 2316 ± 10 | %69,8 | %9,1 | −1,5 |
+| H5 1 halfe / 2 tezgâh | 21 | 2285 ± 10 | %68,9 | %10,2 | −2,8 |
+| H6 1 telci / 2 tezgâh + ayrı mola, birbirine bakar | 21 | 2401 ± 11 | %72,4 | %5,6 | +2,1 |
+| H8 Renk değişimi %40 kısa (SMED) | 28 | 2413 ± 8 | %72,7 | %8,0 | +2,6 |
+| H9 Kopuşlar %30 az | 28 | 2460 ± 12 | %74,2 | %6,2 | +4,7 |
+| H12 Telci, halfenin atkı kopuşu ve kontrolüne yardım eder | 28 | 2373 ± 10 | %71,6 | %6,7 | +0,9 |
+| H13 Yorgunluk yok | 28 | 2357 ± 10 | %71,1 | %7,8 | +0,3 |
+| H14 Yorgunluk iki kat (saatte %6) | 28 | 2340 ± 10 | %70,5 | %7,8 | −0,5 |
+| H15 4 yeni halfe (öğrenme eğrisi, 7 gün ortalaması) | 28 | 2290 ± 9 | %68,9 | %8,1 | −2,6 |
 
-Tam tablo, telci/operatör atama eğrileri ve sanal iş örneklemesi: [results/hali/rapor.md](results/hali/rapor.md).
+Tam tablo, telci/halfe atama eğrileri, yorgunluk ve öğrenme grafikleri ve sanal iş örneklemesi: [results/hali/rapor.md](results/hali/rapor.md).
 Bu sayılar yalnızca yöntemi gösterir; ölçümle güncellenmeden karar için kullanılmamalıdır.
 
 ## Model varsayımları

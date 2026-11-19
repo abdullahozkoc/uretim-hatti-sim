@@ -18,7 +18,8 @@ import numpy as np
 
 VARSAYIM = "VARSAYIM"
 FABRIKA = "FABRİKA"
-ROLLER = ("operator", "telci")
+ROLLER = ("halfe", "telci")          # halfe: dokuma ustası · telci: yardımcısı
+ROL_ETIKET = {"halfe": "Halfe (dokuma ustası)", "telci": "Telci (yardımcı)", "yedek": "Yedek"}
 
 
 # --------------------------------------------------------------------- dağılım
@@ -151,8 +152,8 @@ def tezgah_uret(n: int, sablon: Tezgah | None = None) -> tuple[Tezgah, ...]:
 
 
 # Hangi iş hangi rolün? (sahada farklıysa değiştirin)
-VARSAYILAN_ROLLER = (("atki_kopusu", "operator"), ("top_indirme", "operator"), ("ayar", "operator"),
-                     ("renk_degisimi", "operator"), ("kontrol", "operator"), ("cozgu_kopusu", "telci"),
+VARSAYILAN_ROLLER = (("atki_kopusu", "halfe"), ("top_indirme", "halfe"), ("ayar", "halfe"),
+                     ("renk_degisimi", "halfe"), ("kontrol", "halfe"), ("cozgu_kopusu", "telci"),
                      ("besleme", "telci"))
 
 
@@ -164,8 +165,8 @@ class HaliParam:
     yuz_sayisi: int = 2                      # yüz yüze tezgâh aynı anda 2 halı dokur
     atki_sistemi: int = 2                    # bir sırada kaç atkı (2 ya da 3 atkılı)
 
-    # Personel: her tezgâhta bir operatör ve bir telci (fabrika bilgisi)
-    operator_basina_tezgah: int = 1
+    # Personel: her tezgâhta bir halfe ve bir telci (fabrika bilgisi)
+    halfe_basina_tezgah: int = 1
     telci_basina_tezgah: int = 1
     is_rolleri: tuple[tuple[str, str], ...] = VARSAYILAN_ROLLER
 
@@ -207,9 +208,25 @@ class HaliParam:
     # Vardiya, mola, kişisel ihtiyaç
     vardiya_dk: float = 480.0
     molalar: tuple[tuple[float, float], ...] = ((120, 15), (240, 30), (360, 15))
-    mola_duzeni: str = "toplu"               # toplu | kademeli | capraz | yedek
-    yedek_sayisi: int = 2                    # yedek düzeninde yüzer personel
-    mola_dalga_sayisi: int = 4               # yedek düzeninde personel kaç dalgada çıkar
+    mola_zamani: str = "toplu"               # toplu: herkes aynı anda · ayri: ayrı ayrı (sırayla)
+    mola_kapsama: str = "yok"                # molada kim bakar: yok | komsu | capraz | yedek
+    yedek_sayisi: int = 2                    # kapsama "yedek" iken yüzer personel sayısı
+    mola_dalga_sayisi: int = 4               # ayrı ayrı molada personel kaç dalgada çıkar
+
+    # Telci halfeye yardım eder mi? (telci boştayken kendi tezgâhının bu işlerini de alır)
+    telci_yardim: bool = False
+    yardim_isleri: tuple[str, ...] = ("atki_kopusu", "kontrol")
+
+    # Yorgunluk: iş süresi çarpanı = 1 + oran × (son moladan / vardiya başından beri geçen saat), tavanla sınırlı
+    yorgunluk_orani: float = 0.03            # saat başına %3 yavaşlama (VARSAYIM)
+    yorgunluk_tavan: float = 0.25
+    yorgunluk_gece_ek: float = 0.0           # gece vardiyasında (3. vardiya) ek çarpan, ör. 0.05
+
+    # Öğrenme eğrisi (Wright): n'inci tekrarın süresi ∝ n^b, b = log2(öğrenme oranı).
+    # Ölçülen (standart) süreler deneyimli personeli temsil eder: standart_tekrar'dan sonra çarpan 1.
+    ogrenme_orani: float = 0.85
+    ogrenme_standart_tekrar: int = 500
+    deneyim: tuple[tuple[str, int], ...] = ()   # (personel, başlangıç tekrar sayısı); listede yoksa deneyimli
     kisisel_aralik: Dagilim = field(default_factory=lambda: ustel(120))
     kisisel_sure: Dagilim = field(default_factory=lambda: ucgen(3, 5, 10))
 
@@ -218,7 +235,7 @@ class HaliParam:
     isinma_dk: float = 480.0
 
     kaynaklar: tuple[tuple[str, str], ...] = (
-        ("tezgahlar", FABRIKA), ("operator_basina_tezgah", FABRIKA), ("telci_basina_tezgah", FABRIKA),
+        ("tezgahlar", FABRIKA), ("halfe_basina_tezgah", FABRIKA), ("telci_basina_tezgah", FABRIKA),
         ("renk_ekip_payi", "FABRİKA (\"büyük oranda\"), oran VARSAYIM"))
 
     # ----------------------------------------------------------- türetilenler
@@ -227,16 +244,21 @@ class HaliParam:
         return len(self.tezgahlar)
 
     def kisi_sayisi(self, rol: str) -> int:
-        m = self.operator_basina_tezgah if rol == "operator" else self.telci_basina_tezgah
+        m = self.halfe_basina_tezgah if rol == "halfe" else self.telci_basina_tezgah
         return -(-self.tezgah_sayisi // m)
 
     @property
-    def operator_sayisi(self) -> int:
-        return self.kisi_sayisi("operator")
+    def halfe_sayisi(self) -> int:
+        return self.kisi_sayisi("halfe")
 
     @property
     def personel_sayisi(self) -> int:
-        return sum(self.kisi_sayisi(r) for r in ROLLER) + (self.yedek_sayisi if self.mola_duzeni == "yedek" else 0)
+        return sum(self.kisi_sayisi(r) for r in ROLLER) + (self.yedek_sayisi if self.mola_kapsama == "yedek" else 0)
+
+    @property
+    def mola_duzeni(self) -> str:
+        """Kısa ad: "toplu", "ayri", "ayri+komsu", "ayri+capraz", "ayri+yedek" ..."""
+        return self.mola_zamani + ("" if self.mola_kapsama == "yok" else f"+{self.mola_kapsama}")
 
     @property
     def vardiya_basina_dk(self) -> float:
@@ -309,9 +331,11 @@ class HaliParam:
                 d[f.name] = dag(d[f.name])
         if "tezgahlar" in d:
             d["tezgahlar"] = tuple(Tezgah(**{**t, "devir": dag(t["devir"])}) for t in d["tezgahlar"])
-        for k in ("molalar", "kaynaklar", "is_rolleri"):
+        for k in ("molalar", "kaynaklar", "is_rolleri", "deneyim"):
             if k in d:
                 d[k] = tuple(tuple(m) for m in d[k])
+        if "yardim_isleri" in d:
+            d["yardim_isleri"] = tuple(d["yardim_isleri"])
         return cls(**d)
 
     def kaydet(self, yol) -> None:

@@ -27,7 +27,7 @@ from src.hali.parametre import Dagilim, HaliParam, sabit, ucgen
 # Zaman etüdü formundaki model_alani sütununun alabileceği değerler
 SURE_ALANLARI = ("atki_mudahale", "cozgu_mudahale", "top_indirme", "ayar", "renk_degisim", "besleme_sure",
                  "kontrol_sure", "cozgu_degisim", "ariza_onarim", "kisisel_sure")
-KAYNAK_TIPLERI = ("tezgah", "operator", "telci", "yedek")
+KAYNAK_TIPLERI = ("tezgah", "halfe", "telci", "yedek")
 
 
 def _z(guven: float) -> float:
@@ -95,6 +95,67 @@ def zaman_etudu_analiz(df: pd.DataFrame, toleranslar: dict | None = None) -> pd.
     return pd.DataFrame(satirlar)
 
 
+def _normal(df: pd.DataFrame) -> pd.Series:
+    perf = pd.to_numeric(df["performans"], errors="coerce").fillna(100) if "performans" in df else 100.0
+    return pd.to_numeric(df["sure_dk"], errors="coerce") * perf / 100
+
+
+def _deneyimli_mi(df: pd.DataFrame) -> pd.Series:
+    if "tekrar" not in df:
+        return pd.Series(True, index=df.index)
+    return pd.to_numeric(df["tekrar"], errors="coerce").isna()
+
+
+def yorgunluk_analiz(df: pd.DataFrame, guven: float = 0.95) -> dict | None:
+    """Zaman etüdü + 'mola_sonrasi_dk' sütunu -> yorgunluk oranı (saat başına süre artışı).
+
+    Deneyimli personelin her gözlemi, kendi elemanının ortalamasına bölünür (oran);
+    oran = a + b·saat doğrusal uydurulur, yorgunluk_orani = b / a. En az 20 gözlem gerekir.
+    """
+    if "mola_sonrasi_dk" not in df:
+        return None
+    d = df[_deneyimli_mi(df)].copy()
+    d["saat"] = pd.to_numeric(d["mola_sonrasi_dk"], errors="coerce") / 60
+    d["normal"] = _normal(d)
+    d = d.dropna(subset=["saat", "normal"])
+    if len(d) < 20 or d["saat"].std() == 0:
+        return None
+    d["oran"] = d["normal"] / d.groupby("model_alani")["normal"].transform("mean")
+    x, y = d["saat"].to_numpy(), d["oran"].to_numpy()
+    X = np.column_stack([np.ones_like(x), x])
+    (a, b), *_ = np.linalg.lstsq(X, y, rcond=None)
+    art = y - X @ np.array([a, b])
+    s2 = art @ art / max(len(x) - 2, 1)
+    se_b = float(np.sqrt(s2 / ((x - x.mean()) ** 2).sum()))
+    z = _z(guven)
+    return {"yorgunluk_orani": float(b / a), "alt": float((b - z * se_b) / a), "ust": float((b + z * se_b) / a),
+            "n": int(len(d)), "anlamli": bool(abs(b) > z * se_b)}
+
+
+def ogrenme_analiz(df: pd.DataFrame) -> dict | None:
+    """Zaman etüdü + 'tekrar' sütunu (yeni personelin o işi kaçıncı kez yaptığı) -> Wright eğrisi.
+
+    Deneyimli gözlemler ('tekrar' boş) standart süreyi verir. Yeni personelde
+    log(süre/standart) = b·log(tekrar) + c uydurulur: öğrenme oranı = 2^b,
+    standart süreye ulaşılan tekrar = exp(−c/b). En az 10 yeni personel gözlemi gerekir.
+    """
+    if "tekrar" not in df:
+        return None
+    d = df.copy()
+    d["normal"] = _normal(d)
+    d["n_tekrar"] = pd.to_numeric(d["tekrar"], errors="coerce")
+    std = d[d["n_tekrar"].isna()].groupby("model_alani")["normal"].mean()
+    y = d[d["n_tekrar"] > 0].copy()
+    y["oran"] = y["normal"] / y["model_alani"].map(std)
+    y = y[(y["oran"] > 0)].dropna(subset=["oran"])
+    if len(y) < 10 or y["n_tekrar"].nunique() < 3:
+        return None
+    b, c = np.polyfit(np.log(y["n_tekrar"]), np.log(y["oran"]), 1)
+    hedef = float(np.exp(-c / b)) if b < 0 else float("nan")
+    return {"ogrenme_orani": float(2 ** b), "standart_tekrar": hedef, "n": int(len(y)),
+            "personel": int(y["personel"].nunique()) if "personel" in y else None}
+
+
 # ------------------------------------------------------------- iş örneklemesi
 def gerekli_gozlem_ornekleme(p: float, hata: float = 0.03, guven: float = 0.95, goreli: bool = False) -> int:
     """n = z²·p(1−p)/e². goreli=True ise e = hata·p (ör. ±%5 göreli)."""
@@ -107,7 +168,7 @@ def gerekli_gozlem_ornekleme(p: float, hata: float = 0.03, guven: float = 0.95, 
 def is_ornekleme_analiz(df: pd.DataFrame, guven: float = 0.95, hata: float = 0.03) -> pd.DataFrame:
     """İş örneklemesi formu -> kaynak tipi × durum oranı, %95 YG ve gerekli gözlem.
 
-    Sütunlar: kaynak_tipi (tezgah | operator | telci), kaynak, durum (model durum kodları),
+    Sütunlar: kaynak_tipi (tezgah | halfe | telci), kaynak, durum (model durum kodları),
     isteğe bağlı tarih + tur.
 
     Bir turdaki gözlemler aynı ana aittir ve birbirine bağlıdır (ör. toplu molada
@@ -267,7 +328,8 @@ def uretim_dogrulama(saha: pd.DataFrame, model_tezgah: pd.DataFrame) -> pd.DataF
 # ---------------------------------------------------------- parametre güncelleme
 def parametreleri_guncelle(p: HaliParam, zaman: pd.DataFrame | None = None,
                            kopus: pd.DataFrame | None = None, ariza: dict | None = None,
-                           devir: pd.DataFrame | None = None, renk: dict | None = None) -> HaliParam:
+                           devir: pd.DataFrame | None = None, renk: dict | None = None,
+                           yorgunluk: dict | None = None, ogrenme: dict | None = None) -> HaliParam:
     """Analiz tablolarındaki ölçümleri parametrelere yazar ve kaynağını işaretler."""
     if zaman is not None:
         for _, s in zaman.iterrows():
@@ -289,6 +351,14 @@ def parametreleri_guncelle(p: HaliParam, zaman: pd.DataFrame | None = None,
     if renk is not None:
         p = p.olcum_ile("renk_degisim", renk["sure_dagilim"], f"renk değişimi kaydı n={renk['adet']}")
         p = p.olcum_ile("renk_ekip_payi", renk["ekip_payi"], f"renk değişimi kaydı n={renk['adet']}")
+    if yorgunluk is not None and yorgunluk["anlamli"]:
+        p = p.olcum_ile("yorgunluk_orani", max(0.0, yorgunluk["yorgunluk_orani"]),
+                        f"zaman etüdü, mola sonrası süre, n={yorgunluk['n']}")
+    if ogrenme is not None and 0 < ogrenme["ogrenme_orani"] < 1:
+        p = p.olcum_ile("ogrenme_orani", ogrenme["ogrenme_orani"], f"zaman etüdü, yeni personel n={ogrenme['n']}")
+        if np.isfinite(ogrenme["standart_tekrar"]):
+            p = p.olcum_ile("ogrenme_standart_tekrar", int(round(ogrenme["standart_tekrar"])),
+                            f"zaman etüdü, yeni personel n={ogrenme['n']}")
     return p
 
 
@@ -356,10 +426,20 @@ def analiz_et(klasor=FORM_KLASORU, p: HaliParam | None = None, kayit_saat: float
     devir = form_oku(klasor / "devir_kayitlari.csv")
     uretim = form_oku(klasor / "uretim_kayitlari.csv")
 
-    zt = kt = at = dt = rt = None
+    zt = kt = at = dt = rt = yt = ot = None
     if zaman is not None:
-        zt = zaman_etudu_analiz(zaman)
-        b += ["## Zaman etüdü", "", _md(zt.assign(dagilim=zt["dagilim"].astype(str)).round(3)), ""]
+        zt = zaman_etudu_analiz(zaman[_deneyimli_mi(zaman)])
+        b += ["## Zaman etüdü (deneyimli personel)", "", _md(zt.assign(dagilim=zt["dagilim"].astype(str)).round(3)), ""]
+        yt = yorgunluk_analiz(zaman)
+        if yt:
+            b += ["## Yorgunluk", "", f"Süre, moladan sonraki her saat için %{100 * yt['yorgunluk_orani']:.1f} uzuyor "
+                  f"(%95 YG %{100 * yt['alt']:.1f} … %{100 * yt['ust']:.1f}, n={yt['n']}"
+                  f"{'' if yt['anlamli'] else ', anlamsız: parametre değiştirilmedi'}).", ""]
+        ot = ogrenme_analiz(zaman)
+        if ot:
+            b += ["## Öğrenme eğrisi", "", f"Öğrenme oranı {ot['ogrenme_orani']:.2f} (tekrar iki katına çıkınca süre "
+                  f"×{ot['ogrenme_orani']:.2f}); standart süreye yaklaşık {ot['standart_tekrar']:.0f}. tekrarda "
+                  f"ulaşılıyor (n={ot['n']}).", ""]
     if ornek is not None:
         oa = is_ornekleme_analiz(ornek)
         b += ["## İş örneklemesi (saha)", "", _md(oa[oa["gozlem"] > 0].round(3)), ""]
@@ -388,7 +468,7 @@ def analiz_et(klasor=FORM_KLASORU, p: HaliParam | None = None, kayit_saat: float
         dt = devir_analiz(devir)
         b += ["## Devir", "", _md(dt.assign(dagilim=dt["dagilim"].astype(str)).round(2)), ""]
 
-    p = parametreleri_guncelle(p, zaman=zt, kopus=kt, ariza=at, devir=dt, renk=rt)
+    p = parametreleri_guncelle(p, zaman=zt, kopus=kt, ariza=at, devir=dt, renk=rt, yorgunluk=yt, ogrenme=ot)
     if ornek is not None or uretim is not None:
         reps = [kos_tek(p, 7_000 + i) for i in range(n_model)]
         if ornek is not None:
@@ -419,21 +499,28 @@ def ornek_saha_verisi(klasor, p: HaliParam | None = None, seed: int = 99, gun: f
     klasor = Path(klasor)
     klasor.mkdir(parents=True, exist_ok=True)
     p = _r(p or HaliParam(), sure_gun=gun)
-    r = kos(p, seed)
+    # Öğrenme eğrisi verisi için bir yeni halfe (H03) eklenir.
+    r = kos(_r(p, deneyim=(("H03", 0),)), seed)
     rng = np.random.default_rng(seed)
     isl = r.isler
     eleman = {"atki_kopusu": ("Atkı kopuşu düzeltme", "atki_mudahale"),
               "cozgu_kopusu": ("Çözgü/hav kopuşu düzeltme", "cozgu_mudahale"),
               "top_indirme": ("Top indirme", "top_indirme"), "ayar": ("Desen ayarı", "ayar"),
               "besleme": ("Bobin/cağlık besleme", "besleme_sure"), "kontrol": ("Halı kontrolü", "kontrol_sure")}
+    isl = isl.sort_values("baslama").copy()
+    isl["_tekrar"] = isl.groupby(["personel", "tur"]).cumcount() + 1
+    oran = p.yorgunluk_orani or 1.0
     z = []
     for tur, (ad, alan) in eleman.items():
-        g = isl[isl["tur"] == tur].head(60)
+        g = pd.concat([isl[(isl["tur"] == tur) & (isl["personel"] != "H03")].head(60),
+                       isl[(isl["tur"] == tur) & (isl["personel"] == "H03")]])
         perf = rng.choice([90, 95, 100, 105, 110], len(g))
         for (_, s), pf in zip(g.iterrows(), perf):
             z.append({"tarih": "2026-12-01", "vardiya": 1, "gozlemci": "SENTETIK", "personel": s["personel"],
                       "tezgah": s["tezgah"], "eleman": ad, "model_alani": alan,
-                      "sure_dk": round((s["bitis"] - s["baslama"]) * 100 / pf, 2), "performans": int(pf), "not": ""})
+                      "sure_dk": round((s["bitis"] - s["baslama"]) * 100 / pf, 2), "performans": int(pf),
+                      "mola_sonrasi_dk": round((s["yorgunluk"] - 1) / oran * 60),
+                      "tekrar": int(s["_tekrar"]) if s["personel"] == "H03" else "", "not": ""})
     pd.DataFrame(z).to_csv(klasor / "zaman_etudu.csv", index=False)
     o = sanal_is_ornekleme(r, int(gun * 3 * 3), seed)
     o.insert(0, "gozlemci", "SENTETIK")

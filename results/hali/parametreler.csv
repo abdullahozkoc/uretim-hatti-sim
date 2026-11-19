@@ -1,9 +1,9 @@
 Parametre,Değer,Kaynak
 yuz_sayisi,2,VARSAYIM
 atki_sistemi,2,VARSAYIM
-operator_basina_tezgah,1,FABRİKA
+halfe_basina_tezgah,1,FABRİKA
 telci_basina_tezgah,1,FABRİKA
-is_rolleri,"(('atki_kopusu', 'operator'), ('top_indirme', 'operator'), ('ayar', 'operator'), ('renk_degisimi', 'operator'), ('kontrol', 'operator'), ('cozgu_kopusu', 'telci'), ('besleme', 'telci'))",VARSAYIM
+is_rolleri,"(('atki_kopusu', 'halfe'), ('top_indirme', 'halfe'), ('ayar', 'halfe'), ('renk_degisimi', 'halfe'), ('kontrol', 'halfe'), ('cozgu_kopusu', 'telci'), ('besleme', 'telci'))",VARSAYIM
 top_uzunlugu,"Üçgen(20, 30, 40)",VARSAYIM
 renk_degisim_olasiligi,0.3,VARSAYIM
 desen_degisim_olasiligi,0.4,VARSAYIM
@@ -31,9 +31,18 @@ cozgu_degisim,"Üçgen(120, 180, 300)",VARSAYIM
 cozgu_ekibi,1,VARSAYIM
 vardiya_dk,480.0,VARSAYIM
 molalar,"((120, 15), (240, 30), (360, 15))",VARSAYIM
-mola_duzeni,toplu,VARSAYIM
+mola_zamani,toplu,VARSAYIM
+mola_kapsama,yok,VARSAYIM
 yedek_sayisi,2,VARSAYIM
 mola_dalga_sayisi,4,VARSAYIM
+telci_yardim,False,VARSAYIM
+yardim_isleri,"('atki_kopusu', 'kontrol')",VARSAYIM
+yorgunluk_orani,0.03,VARSAYIM
+yorgunluk_tavan,0.25,VARSAYIM
+yorgunluk_gece_ek,0.0,VARSAYIM
+ogrenme_orani,0.85,VARSAYIM
+ogrenme_standart_tekrar,500,VARSAYIM
+deneyim,(),VARSAYIM
 kisisel_aralik,Üstel(ort 120),VARSAYIM
 kisisel_sure,"Üçgen(3, 5, 10)",VARSAYIM
 sure_gun,7.0,VARSAYIM
